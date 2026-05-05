@@ -6,9 +6,14 @@ Raymer's loader
 
         git clone https://github.com/Raymer8639/ralr.git
 
+- Enter the repo
+
+        cd ralr
+
 - Build and install:
 
         ./install.sh
+
 # Deletion
 Delete:
 
