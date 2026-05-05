@@ -1,0 +1,13 @@
+[package]
+name = "ralr"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+vm_isa = { workspace = true }
+bincode = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["full"] }
+anyhow = { workspace = true }
+tracing = { workspace = true, features = ["log"] }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }

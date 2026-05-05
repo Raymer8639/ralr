@@ -1,0 +1,12 @@
+[package]
+name = "ralr_asm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+vm_isa = { workspace = true }
+bincode = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["full"] }
+anyhow = { workspace = true }
+

@@ -1,0 +1,4 @@
+add 1 2 $a1;
+sub $a1 1 $a1;
+mul $a1 2 $a1;
+div $a1 2 $a1;
