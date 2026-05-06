@@ -1,5 +1,4 @@
-use std::sync::Arc;
-use vm_isa::{register::Register, value::Value};
+use vm_isa::value::Value;
 
 #[test]
 fn add_i32() {
@@ -65,34 +64,6 @@ fn add_u128() {
 fn sub_i128() {
     let result = Value::I128(-10) - Value::I128(5);
     assert!(matches!(result, Value::I128(-15)));
-}
-
-#[test]
-fn add_with_register_resolution() {
-    let reg = Value::Register(Arc::new(Register::A1(Value::I32(10))));
-    let result = reg + Value::I32(5);
-    assert!(matches!(result, Value::I32(15)));
-}
-
-#[test]
-fn sub_with_register_resolution() {
-    let reg = Value::Register(Arc::new(Register::A2(Value::F64(10.0))));
-    let result = reg - Value::F64(3.0);
-    assert!(matches!(result, Value::F64(v) if (v - 7.0).abs() < f64::EPSILON));
-}
-
-#[test]
-fn mul_with_register_resolution() {
-    let reg = Value::Register(Arc::new(Register::A3(Value::U8(4))));
-    let result = reg * Value::U8(3);
-    assert!(matches!(result, Value::U8(12)));
-}
-
-#[test]
-fn div_with_register_resolution() {
-    let reg = Value::Register(Arc::new(Register::A4(Value::I32(20))));
-    let result = reg / Value::I32(4);
-    assert!(matches!(result, Value::I32(5)));
 }
 
 #[test]

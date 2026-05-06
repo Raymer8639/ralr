@@ -1,4 +1,4 @@
-add 1 2 $a1;
+add 12 2 $a1;
 _println $a1;
 _println "hello";
 _println 42;

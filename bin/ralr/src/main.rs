@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use tokio::fs;
 use tracing::{Instrument, Level, info, span};
-use vm_isa::{op_code::OpCode, register::AllRegister};
+use vm_isa::{op_code::OpCode, register::Registers};
 
 pub mod runner;
 
@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let all_register = AllRegister::new();
+    let registers = Registers::new();
     // 读取和解析
     let reader_span = span!(Level::TRACE, "Reader");
     let op_code: Vec<OpCode> = async {
@@ -34,6 +34,6 @@ async fn main() -> Result<()> {
     .instrument(reader_span)
     .await?;
     // 运行
-    runner::runner(op_code, all_register)?;
+    runner::runner(op_code, registers)?;
     Ok(())
 }
