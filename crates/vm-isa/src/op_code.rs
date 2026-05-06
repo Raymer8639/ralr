@@ -8,4 +8,6 @@ pub enum OpCode {
     Sub(Value, Value, Register),
     Mul(Value, Value, Register),
     Div(Value, Value, Register),
+    Println(Value),
+    Print(Value),
 }

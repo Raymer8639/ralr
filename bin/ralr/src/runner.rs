@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -39,6 +40,26 @@ macro_rules! update_register_from_allreister {
                 _ => $sec,
             };
             (fir, sec)
+        }
+    };
+}
+
+macro_rules! resolve_value {
+    ($val: expr, $ar: expr, [$($register: ident),*], [$($ar_register: ident),*]) => {
+        match $val {
+            Value::Register(reg) => {
+                let ar_reg = match *reg {
+                    $(
+                        Register::$register(_) => &$ar.$ar_register,
+                    )*
+                };
+                match ar_reg {
+                    $(
+                        Register::$register(v) => v.clone(),
+                    )*
+                }
+            }
+            other => other,
         }
     };
 }
@@ -86,6 +107,15 @@ pub fn runner(cmds: Vec<OpCode>, mut ar: AllRegister) -> Result<()> {
                     [a1, a2, a3, a4, a5]
                 );
                 op_assign!(fir, sec, out, ar, /, [A1, A2, A3, A4, A5], [a1, a2, a3, a4, a5])
+            }
+            OpCode::Println(val) => {
+                let resolved = resolve_value!(val, ar, [A1, A2, A3, A4, A5], [a1, a2, a3, a4, a5]);
+                println!("{resolved}");
+            }
+            OpCode::Print(val) => {
+                let resolved = resolve_value!(val, ar, [A1, A2, A3, A4, A5], [a1, a2, a3, a4, a5]);
+                print!("{resolved}");
+                std::io::stdout().flush().unwrap();
             }
         }
     }

@@ -1,0 +1,9 @@
+add 1 2 $a1;
+_println $a1;
+_println "hello";
+_println 42;
+_print $a1;
+_print "\n";
+_print "hello\n";
+_print 42;
+_print "\n";

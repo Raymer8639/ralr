@@ -2,6 +2,7 @@ use crate::register::Register;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::{
+    fmt,
     ops::{Add, Div, Mul, Sub},
     sync::Arc,
 };
@@ -54,6 +55,24 @@ macro_rules! update_register {
             (val1_new, val2_new)
         }
     };
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::None => write!(f, "None"),
+            Value::I32(v) => write!(f, "{v}"),
+            Value::I128(v) => write!(f, "{v}"),
+            Value::U8(v) => write!(f, "{v}"),
+            Value::U32(v) => write!(f, "{v}"),
+            Value::U128(v) => write!(f, "{v}"),
+            Value::F32(v) => write!(f, "{v}"),
+            Value::F64(v) => write!(f, "{v}"),
+            Value::Bool(v) => write!(f, "{v}"),
+            Value::String(v) => write!(f, "{v}"),
+            Value::Register(_) => write!(f, "<unresolved register>"),
+        }
+    }
 }
 
 impl Add for Value {

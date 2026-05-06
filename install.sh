@@ -3,5 +3,5 @@ set -x
 
 cargo build --release
 
-cargo install --path bin/ralr
-cargo install --path bin/ralr-asm
+cargo install --force --path bin/ralr
+cargo install --force --path bin/ralr-asm
