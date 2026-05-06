@@ -1,37 +1,56 @@
 use crate::value::Value;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
-pub struct AllRegister {
-    pub a1: Register,
-    pub a2: Register,
-    pub a3: Register,
-    pub a4: Register,
-    pub a5: Register,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Register {
+    A1,
+    A2,
+    A3,
+    A4,
+    A5,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum Register {
-    A1(Value),
-    A2(Value),
-    A3(Value),
-    A4(Value),
-    A5(Value),
-}
-impl Default for AllRegister {
-    fn default() -> Self {
-        Self::new()
+impl Register {
+    pub fn index(self) -> usize {
+        match self {
+            Register::A1 => 0,
+            Register::A2 => 1,
+            Register::A3 => 2,
+            Register::A4 => 3,
+            Register::A5 => 4,
+        }
     }
 }
 
-impl AllRegister {
+#[derive(Debug)]
+pub struct Registers {
+    inner: [Value; 5],
+}
+
+impl Registers {
     pub fn new() -> Self {
         Self {
-            a1: Register::A1(Value::None),
-            a2: Register::A2(Value::None),
-            a3: Register::A3(Value::None),
-            a4: Register::A4(Value::None),
-            a5: Register::A5(Value::None),
+            inner: [
+                Value::None,
+                Value::None,
+                Value::None,
+                Value::None,
+                Value::None,
+            ],
         }
+    }
+
+    pub fn read(&self, reg: Register) -> &Value {
+        &self.inner[reg.index()]
+    }
+
+    pub fn write(&mut self, reg: Register, value: Value) {
+        self.inner[reg.index()] = value;
+    }
+}
+
+impl Default for Registers {
+    fn default() -> Self {
+        Self::new()
     }
 }

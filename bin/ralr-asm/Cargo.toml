@@ -9,5 +9,4 @@ bincode = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }
-unescape = { workspace = true }
 
