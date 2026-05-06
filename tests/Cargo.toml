@@ -1,0 +1,10 @@
+[package]
+name = "ralr-tests"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+vm_isa = { path = "../crates/vm-isa" }
+bincode = "1.3.3"

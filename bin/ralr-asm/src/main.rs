@@ -27,7 +27,6 @@ fn main() -> Result<()> {
             reader::reader(line?, &mut cmds)?;
         }
     }
-
     // 写入文件
     let file = File::create(args.output_name.unwrap_or(String::from("output.abin")))?;
     let reader = BufWriter::new(file);
