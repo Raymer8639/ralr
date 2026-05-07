@@ -52,7 +52,13 @@ arithmetic:  keyword operand1 operand2 $dest_register   ; e.g. add 1 2 $a1
 print:       _println|_print value                       ; e.g. _println "hello"
 ```
 
-Each instruction must be terminated with `;`. Lines can contain multiple `;`-delimited instructions. The trailing empty segment after the final `;` is discarded. Operands for arithmetic instructions are `(Value, Value, Register)` — the destination must be a register (`$a1`–`$a5`).
+Each instruction must be terminated with `;`.
+
+## Comments
+
+- `//` — line comment, everything from `//` to end of line is ignored
+- `/* … */` — block comment, everything between `/*` and `*/` is ignored (multi-line)
+- Comment delimiters inside `"..."` strings are treated as literal text, not comments Lines can contain multiple `;`-delimited instructions. The trailing empty segment after the final `;` is discarded. Operands for arithmetic instructions are `(Value, Value, Register)` — the destination must be a register (`$a1`–`$a5`).
 
 - `main.rs` — Parses CLI args (`-o` for output name, multiple input files supported), reads lines, passes each to `reader()`.
 - `reader.rs` — Parses instruction tokens. `to_value()` converts literal tokens only (no register prefix): string literals must be double-quoted (`"..."`) and are processed through `unescape_str()` for escape sequence handling (`\n`, `\t`, `\\`, `\"`, `\r`, `\0`, `\xNN`, `\u{NNNN}`); bare words `true`/`false` map to `Bool`; numbers are parsed via a `try_parse!` macro chain (`u8` → `u32` → `u128` → `i32` → `i128` → `f32` → `f64`). `to_register()` handles `$a1`–`$a5` → `Register::A1`–`A5`. `to_operand()` dispatches: `$`-prefixed tokens go to `Operand::Register`, everything else to `Operand::Literal`. `tokenize()` splits instructions on whitespace while respecting quoted strings as single tokens. Unrecognized tokens error. Supports `add`, `sub`, `mul`, `div`, `_println`, and `_print` keywords. Unrecognized keywords are silently ignored via the `_ => ()` catch-all.

@@ -326,6 +326,32 @@ fn parse_block(source: &str, pos: &mut usize, cmds: &mut Vec<OpCode>) -> Result<
             break;
         }
 
+        // Line comment `//` — skip to end of line.
+        // 中文：行注释 `//` — 跳过直到行尾。
+        // 日本語：行コメント `//` — 行末までスキップ。
+        // Русский: Строчный комментарий `//` — пропустить до конца строки.
+        if *pos + 1 < len && bytes[*pos] == b'/' && bytes[*pos + 1] == b'/' {
+            while *pos < len && bytes[*pos] != b'\n' {
+                *pos += 1;
+            }
+            continue;
+        }
+        // Block comment `/* … */` — skip to closing `*/`.
+        // 中文：块注释 `/* … */` — 跳过直到 `*/`。
+        // 日本語：ブロックコメント `/* … */` — `*/` までスキップ。
+        // Русский: Блочный комментарий `/* … */` — пропустить до `*/`.
+        if *pos + 1 < len && bytes[*pos] == b'/' && bytes[*pos + 1] == b'*' {
+            *pos += 2;
+            while *pos + 1 < len {
+                if bytes[*pos] == b'*' && bytes[*pos + 1] == b'/' {
+                    *pos += 2;
+                    break;
+                }
+                *pos += 1;
+            }
+            continue;
+        }
+
         match bytes[*pos] {
             b'{' => {
                 *pos += 1;
