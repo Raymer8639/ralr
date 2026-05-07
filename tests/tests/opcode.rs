@@ -48,21 +48,22 @@ fn serialize_deserialize_roundtrip() {
     assert!(matches!(deserialized[3], OpCode::Div(..)));
 }
 
-/// The `examples/add.abin` fixture (4 arithmetic instructions) must
-/// deserialize correctly. This ensures the binary format stays stable.
-/// 中文：`examples/add.abin` 测试夹具（4 条算术指令）必须正确反序列化。这确保二进制格式保持稳定。
-/// 日本語：`examples/add.abin` フィクスチャ（4 つの算術命令）が正しくデシリアライズされる必要があります。これによりバイナリ形式の安定性が保証されます。
-/// Русский: Фикстура `examples/add.abin` (4 арифметические инструкции) должна
-/// десериализоваться корректно. Это гарантирует стабильность бинарного формата.
+/// The `examples/add.abin` fixture must deserialize correctly.
+/// This ensures the binary format stays stable.
+/// 中文：`examples/add.abin` 测试夹具必须正确反序列化。这确保二进制格式保持稳定。
+/// 日本語：`examples/add.abin` フィクスチャが正しくデシリアライズされる必要があります。これによりバイナリ形式の安定性が保証されます。
+/// Русский: Фикстура `examples/add.abin` должна десериализоваться корректно.
+/// Это гарантирует стабильность бинарного формата.
 #[test]
 fn deserialize_example_add_file() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/add.abin");
     let bytes = std::fs::read(path).expect("failed to read add.abin example file");
     let ops: Vec<OpCode> = bincode::deserialize(&bytes).expect("failed to deserialize add.abin");
 
-    assert_eq!(ops.len(), 4);
-    assert!(matches!(ops[0], OpCode::Add(..)));
-    assert!(matches!(ops[1], OpCode::Sub(..)));
-    assert!(matches!(ops[2], OpCode::Mul(..)));
-    assert!(matches!(ops[3], OpCode::Div(..)));
+    assert_eq!(ops.len(), 5);
+    assert!(matches!(ops[0], OpCode::Println(..)));
+    assert!(matches!(ops[1], OpCode::Add(..)));
+    assert!(matches!(ops[2], OpCode::Sub(..)));
+    assert!(matches!(ops[3], OpCode::Mul(..)));
+    assert!(matches!(ops[4], OpCode::Div(..)));
 }

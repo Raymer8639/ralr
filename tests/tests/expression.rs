@@ -512,3 +512,340 @@ fn eval_mixed_old_and_new() {
     assert_eq!(regs.read(Register::A1), &Value::U8(10));
     assert_eq!(regs.read(Register::A2), &Value::U8(15));
 }
+
+// ── Escape sequence tests ────────────────────────────────────────────
+
+#[test]
+fn parse_string_with_newline_escape() {
+    let ops = reader::parse(r#"$a1 = "a\nb";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\nb"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_tab_escape() {
+    let ops = reader::parse(r#"$a1 = "a\tb";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\tb"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_carriage_return_escape() {
+    let ops = reader::parse(r#"$a1 = "a\rb";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\rb"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_backslash_escape() {
+    let ops = reader::parse(r#"$a1 = "a\\b";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\\b"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_double_quote_escape() {
+    let ops = reader::parse(r#"$a1 = "a\"b";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\"b"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_single_quote_escape() {
+    let ops = reader::parse(r#"$a1 = "a\'b";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a'b"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_bell_escape() {
+    let ops = reader::parse(r#"$a1 = "a\ab";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\x07b"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_backspace_escape() {
+    let ops = reader::parse(r#"$a1 = "a\bb";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\x08b"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_form_feed_escape() {
+    let ops = reader::parse(r#"$a1 = "a\fb";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\x0Cb"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_vertical_tab_escape() {
+    let ops = reader::parse(r#"$a1 = "a\vb";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\x0Bb"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_escape_char_escape() {
+    let ops = reader::parse(r#"$a1 = "a\eb";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\x1Bb"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_null_escape() {
+    let ops = reader::parse(r#"$a1 = "a\0b";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\0b"),
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn parse_string_with_multiple_escapes() {
+    let ops = reader::parse(r#"$a1 = "\t\r\n\0\x41\u{4e2d}";"#).unwrap();
+    match &ops[0] {
+        OpCode::Expr(Expr::Literal(Value::String(s)), _) => {
+            assert_eq!(s, "\t\r\n\0\x41\u{4e2d}");
+        }
+        _ => panic!("expected string literal"),
+    }
+}
+
+#[test]
+fn unescape_invalid_escape_errors() {
+    let result = reader::parse(r#"$a1 = "\w";"#);
+    assert!(result.is_err());
+}
+
+// ── If/else tests ────────────────────────────────────────────────────
+
+#[test]
+fn parse_if_true_statement() {
+    let ops = reader::parse("if true { $a1 = 1; }").unwrap();
+    assert_eq!(ops.len(), 1);
+    assert!(matches!(&ops[0], OpCode::If(_, _, None)));
+}
+
+#[test]
+fn parse_if_else_statement() {
+    let ops = reader::parse("if true { $a1 = 1; } else { $a1 = 2; }").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::If(_, then, else_b) => {
+            assert_eq!(then.len(), 1);
+            assert!(else_b.is_some());
+        }
+        _ => panic!("expected If"),
+    }
+}
+
+#[test]
+fn parse_if_else_if_chain() {
+    let ops = reader::parse(
+        "if $a1 == 1 { $a2 = 10; } else if $a1 == 2 { $a2 = 20; } else { $a2 = 30; }",
+    )
+    .unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::If(_, then, Some(else_b)) => {
+            assert_eq!(then.len(), 1);
+            // else body is a single If (the "else if" desugaring)
+            assert_eq!(else_b.len(), 1);
+            assert!(matches!(&else_b[0], OpCode::If(_, _, _)));
+        }
+        _ => panic!("expected If with else"),
+    }
+}
+
+#[test]
+fn parse_if_with_complex_condition() {
+    let ops =
+        reader::parse("if $a1 > 0 && $a2 < 100 || $a3 == 1 { $a4 = 42; }").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::If(expr, _, _) => {
+            assert!(matches!(expr, Expr::Binary(_, _, _)));
+        }
+        _ => panic!("expected If"),
+    }
+}
+
+#[test]
+fn parse_if_with_parenthesized_condition() {
+    let ops = reader::parse("if ($a1 > 0) { $a2 = 1; }").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::If(expr, _, _) => {
+            assert!(matches!(expr, Expr::Binary(_, _, _)));
+        }
+        _ => panic!("expected If"),
+    }
+}
+
+#[test]
+fn if_condition_requires_brace() {
+    let result = reader::parse("if true $a1 = 1;");
+    assert!(result.is_err());
+}
+
+#[test]
+fn if_condition_requires_condition() {
+    let result = reader::parse("if { $a1 = 1; }");
+    assert!(result.is_err());
+}
+
+#[test]
+fn if_missing_else_brace_errors() {
+    let result = reader::parse("if true { $a1 = 1; } else $a1 = 2;");
+    assert!(result.is_err());
+}
+
+// ── If/else execution tests ──────────────────────────────────────────
+
+#[test]
+fn eval_if_true_executes_then() {
+    let regs = run("if true { $a1 = 42; }");
+    assert_eq!(regs.read(Register::A1), &Value::U8(42));
+}
+
+#[test]
+fn eval_if_false_skips_then() {
+    let regs = run("$a1 = 0; if false { $a1 = 99; }");
+    assert_eq!(regs.read(Register::A1), &Value::U8(0));
+}
+
+#[test]
+fn eval_if_else_false_branch() {
+    let regs = run("if false { $a1 = 1; } else { $a1 = 2; }");
+    assert_eq!(regs.read(Register::A1), &Value::U8(2));
+}
+
+#[test]
+fn eval_if_else_true_branch() {
+    let regs = run("if true { $a1 = 1; } else { $a1 = 2; }");
+    assert_eq!(regs.read(Register::A1), &Value::U8(1));
+}
+
+#[test]
+fn eval_if_else_if_chain_first() {
+    let regs = run(
+        "if 1 == 1 { $a1 = 1; } else if 1 == 2 { $a1 = 2; } else { $a1 = 3; }",
+    );
+    assert_eq!(regs.read(Register::A1), &Value::U8(1));
+}
+
+#[test]
+fn eval_if_else_if_chain_second() {
+    let regs = run(
+        "if 1 == 2 { $a1 = 1; } else if 1 == 1 { $a1 = 2; } else { $a1 = 3; }",
+    );
+    assert_eq!(regs.read(Register::A1), &Value::U8(2));
+}
+
+#[test]
+fn eval_if_else_if_chain_else() {
+    let regs = run(
+        "if 1 == 2 { $a1 = 1; } else if 1 == 3 { $a1 = 2; } else { $a1 = 3; }",
+    );
+    assert_eq!(regs.read(Register::A1), &Value::U8(3));
+}
+
+#[test]
+fn eval_if_else_if_no_final_else() {
+    let regs = run("$a1 = 0; if false { $a1 = 1; } else if false { $a1 = 2; }");
+    assert_eq!(regs.read(Register::A1), &Value::U8(0));
+}
+
+#[test]
+fn eval_nested_if() {
+    let regs = run("if true { if true { $a1 = 99; } }");
+    assert_eq!(regs.read(Register::A1), &Value::U8(99));
+}
+
+#[test]
+fn eval_if_inside_block() {
+    let regs = run("{ if true { $a1 = 7; } }");
+    assert_eq!(regs.read(Register::A1), &Value::U8(7));
+}
+
+#[test]
+fn eval_if_with_expression_condition() {
+    let regs = run("$a1 = 10; $a2 = 5; if $a1 > $a2 { $a3 = 1; } else { $a3 = 0; }");
+    assert_eq!(regs.read(Register::A3), &Value::U8(1));
+}
+
+#[test]
+#[should_panic]
+fn eval_if_non_bool_condition_panics() {
+    run("if 42 { $a1 = 1; }");
+}
+
+// ── If/else bincode roundtrip ────────────────────────────────────────
+
+#[test]
+fn if_else_roundtrip() {
+    let ops = vec![OpCode::If(
+        Expr::Literal(Value::Bool(true)),
+        vec![OpCode::Expr(
+            Expr::Literal(Value::U8(1)),
+            Register::A1,
+        )],
+        Some(vec![OpCode::Expr(
+            Expr::Literal(Value::U8(2)),
+            Register::A1,
+        )]),
+    )];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    assert_eq!(deserialized.len(), 1);
+    match &deserialized[0] {
+        OpCode::If(cond, then, else_b) => {
+            assert_eq!(cond, &Expr::Literal(Value::Bool(true)));
+            assert_eq!(then.len(), 1);
+            assert!(else_b.is_some());
+        }
+        _ => panic!("expected If"),
+    }
+}
+
+#[test]
+fn if_without_else_roundtrip() {
+    let ops = vec![OpCode::If(
+        Expr::Literal(Value::Bool(false)),
+        vec![],
+        None,
+    )];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    assert_eq!(deserialized.len(), 1);
+    match &deserialized[0] {
+        OpCode::If(_, then, else_b) => {
+            assert!(then.is_empty());
+            assert!(else_b.is_none());
+        }
+        _ => panic!("expected If"),
+    }
+}

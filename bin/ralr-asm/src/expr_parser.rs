@@ -132,10 +132,7 @@ fn tokenize_expr(s: &str) -> Vec<&str> {
         // 日本語：識別子 / 数値 / レジスタを蓄積。
         // Русский: Накопить идентификатор / число / регистр.
         let start = i;
-        while i < len
-            && !bytes[i].is_ascii_whitespace()
-            && !SINGLE_CHAR.contains(&bytes[i])
-        {
+        while i < len && !bytes[i].is_ascii_whitespace() && !SINGLE_CHAR.contains(&bytes[i]) {
             // Stop before multi-char operators too.
             // 中文：同样在遇到双字符运算符前停止。
             // 日本語：マルチ文字演算子の前でも停止。

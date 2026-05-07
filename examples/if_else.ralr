@@ -1,0 +1,52 @@
+$a1 = 10;
+
+_println "=== if (true) ===";
+if true {
+    _println "then-branch executed";
+}
+
+_println "=== if (false) ===";
+if false {
+    _println "SHOULD NOT APPEAR";
+}
+_println "after if-false";
+
+_println "=== if/else ===";
+if $a1 < 5 {
+    _println "SHOULD NOT APPEAR";
+} else {
+    _println "else-branch executed";
+}
+
+_println "=== if/else if/else ===";
+$a1 = 42;
+if $a1 == 10 {
+    _println "SHOULD NOT APPEAR";
+} else if $a1 == 42 {
+    _println "else-if matched 42";
+} else {
+    _println "SHOULD NOT APPEAR";
+}
+
+_println "=== if/else if (no final else) ===";
+if $a1 == 10 {
+    _println "SHOULD NOT APPEAR";
+} else if $a1 == 100 {
+    _println "SHOULD NOT APPEAR";
+}
+_println "no branch taken";
+
+_println "=== nested if ===";
+if $a1 >= 0 {
+    if $a1 == 42 {
+        _println "nested if correct";
+    }
+    _println "outer then";
+}
+
+_println "=== expression condition ===";
+if $a1 > 0 && $a1 < 100 {
+    _println "compound condition works";
+}
+
+_println "done";

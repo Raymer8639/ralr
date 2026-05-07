@@ -73,4 +73,13 @@ pub enum OpCode {
     /// 日本語：式ツリーを評価し、結果を宛先レジスタに書き込みます。
     /// Русский: Вычисляет дерево выражения и записывает результат в целевой регистр.
     Expr(Expr, Register),
+    /// Conditional branch. Evaluates the expression; if `Bool(true)`,
+    /// executes the then-body. If `Bool(false)`, executes the optional
+    /// else-body. Panics on non-Bool conditions.
+    /// 中文：条件分支。计算表达式；若 `Bool(true)` 则执行 then 体，若 `Bool(false)` 则执行可选的 else 体。非 Bool 条件会 panic。
+    /// 日本語：条件分岐。式を評価し、`Bool(true)` なら then 本文を実行し、`Bool(false)` ならオプションの else 本文を実行します。非 Bool 条件ではパニックします。
+    /// Русский: Условное ветвление. Вычисляет выражение; если `Bool(true)` —
+    /// выполняет then-тело, если `Bool(false)` — выполняет опциональное else-тело.
+    /// Паникует на не-Bool условиях.
+    If(Expr, Vec<OpCode>, Option<Vec<OpCode>>),
 }

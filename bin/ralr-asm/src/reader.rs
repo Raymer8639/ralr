@@ -44,10 +44,10 @@ macro_rules! try_parse {
 /// 日本語：文字列リテラル内のバックスラッシュエスケープシーケンスを処理します。
 /// Русский: Обрабатывает escape-последовательности с обратной косой чертой в строковом литерале.
 ///
-/// Supports: `\n` `\t` `\r` `\\` `\"` `\0` `\xNN` `\u{NNNN}`.
-/// 中文：支持：`\n` `\t` `\r` `\\` `\"` `\0` `\xNN` `\u{NNNN}`。
-/// 日本語：対応：`\n` `\t` `\r` `\\` `\"` `\0` `\xNN` `\u{NNNN}`。
-/// Русский: Поддерживает: `\n` `\t` `\r` `\\` `\"` `\0` `\xNN` `\u{NNNN}`.
+/// Supports: `\n` `\t` `\r` `\\` `\"` `\'` `\a` `\b` `\f` `\v` `\e` `\0` `\xNN` `\u{NNNN}`.
+/// 中文：支持：`\n` `\t` `\r` `\\` `\"` `\'` `\a` `\b` `\f` `\v` `\e` `\0` `\xNN` `\u{NNNN}`。
+/// 日本語：対応：`\n` `\t` `\r` `\\` `\"` `\'` `\a` `\b` `\f` `\v` `\e` `\0` `\xNN` `\u{NNNN}`。
+/// Русский: Поддерживает: `\n` `\t` `\r` `\\` `\"` `\'` `\a` `\b` `\f` `\v` `\e` `\0` `\xNN` `\u{NNNN}`.
 ///
 /// Returns `None` on any unrecognized or malformed escape.
 /// 中文：对于任何无法识别或格式错误的转义，返回 `None`。
@@ -69,6 +69,12 @@ fn unescape_str(s: &str) -> Option<String> {
             'r' => out.push('\r'),
             '\\' => out.push('\\'),
             '"' => out.push('"'),
+            '\'' => out.push('\''),
+            'a' => out.push('\x07'),
+            'b' => out.push('\x08'),
+            'f' => out.push('\x0C'),
+            'v' => out.push('\x0B'),
+            'e' => out.push('\x1B'),
             '0' => out.push('\0'),
             'x' => {
                 let hi = chars.next()?.to_digit(16)?;
@@ -297,6 +303,109 @@ fn parse_instruction(cmd: &str, cmds: &mut Vec<OpCode>) -> Result<()> {
     Ok(())
 }
 
+/// Parses the `else` tail of an `if` statement: optionally `else { ... }`
+/// or `else if ...`. Returns `None` if there is no else clause, or
+/// `Some(body)` with the else-body opcodes. For `else if`, the body is a
+/// single-element vec containing a recursive [`OpCode::If`].
+/// 中文：解析 `if` 语句的 `else` 尾部：可选的 `else { ... }` 或 `else if ...`。若无 else 子句返回 `None`，否则返回 `Some(body)`。对于 `else if`，body 是包含递归 [`OpCode::If`] 的单元素 vec。
+/// 日本語：`if` 文の `else` 尾部を解析します：オプションの `else { ... }` または `else if ...`。else 節がない場合は `None` を返し、それ以外は `Some(body)` を返します。`else if` の場合、body は再帰的な [`OpCode::If`] を含む単一要素の vec です。
+/// Русский: Парсит хвост `else` оператора `if`: опционально `else { ... }`
+/// или `else if ...`. Возвращает `None`, если else-клаузы нет, или `Some(body)`.
+/// Для `else if` тело — одноэлементный vec с рекурсивным [`OpCode::If`].
+fn parse_else_tail(
+    source: &str,
+    pos: &mut usize,
+    bytes: &[u8],
+    len: usize,
+) -> Result<Option<Vec<OpCode>>> {
+    while *pos < len && bytes[*pos].is_ascii_whitespace() {
+        *pos += 1;
+    }
+
+    // Check for the word "else" followed by non-alphanumeric boundary.
+    // 中文：检查单词 "else" 后面是否跟非字母数字边界。
+    // 日本語：単語 "else" の後に非英数字境界が続くかチェックします。
+    // Русский: Проверить слово "else" с последующей не-буквенно-цифровой границей.
+    if *pos + 4 > len
+        || bytes[*pos] != b'e'
+        || bytes[*pos + 1] != b'l'
+        || bytes[*pos + 2] != b's'
+        || bytes[*pos + 3] != b'e'
+    {
+        return Ok(None);
+    }
+    let after = *pos + 4;
+    if after < len && bytes[after].is_ascii_alphanumeric() {
+        return Ok(None); // e.g. "elsewhere" — not the keyword
+                         // 中文：例如 "elsewhere" — 不是关键字
+                         // 日本語：例："elsewhere" — キーワードではない
+                         // Русский: например "elsewhere" — не ключевое слово
+    }
+    *pos += 4; // consume "else"
+               // 中文：消费 "else"
+               // 日本語："else" を消費
+               // Русский: поглотить "else"
+
+    while *pos < len && bytes[*pos].is_ascii_whitespace() {
+        *pos += 1;
+    }
+
+    if *pos + 1 < len && bytes[*pos] == b'i' && bytes[*pos + 1] == b'f' {
+        // "else if" — parse condition, block, and recurse for further tails.
+        // 中文："else if" — 解析条件、块，并递归处理后续尾部。
+        // 日本語："else if" — 条件、ブロックを解析し、さらに後続の尾部を再帰的に処理します。
+        // Русский: "else if" — парсим условие, блок и рекурсивно обрабатываем дальнейшие хвосты.
+        *pos += 2; // consume "if"
+                   // 中文：消费 "if"
+                   // 日本語："if" を消費
+                   // Русский: поглотить "if"
+        while *pos < len && bytes[*pos].is_ascii_whitespace() {
+            *pos += 1;
+        }
+        // Parse condition expression text (until `{`).
+        // 中文：解析条件表达式文本（直到 `{`）。
+        // 日本語：条件式テキストを解析します（`{` まで）。
+        // Русский: Парсим текст условия (до `{`).
+        let cond_start = *pos;
+        while *pos < len && bytes[*pos] != b'{' {
+            if bytes[*pos] == b'"' {
+                *pos += 1;
+                while *pos < len {
+                    if bytes[*pos] == b'\\' {
+                        *pos += 2;
+                    } else if bytes[*pos] == b'"' {
+                        *pos += 1;
+                        break;
+                    } else {
+                        *pos += 1;
+                    }
+                }
+            } else {
+                *pos += 1;
+            }
+        }
+        let cond_str = source[cond_start..*pos].trim();
+        let cond = parse_expr_str(cond_str)?;
+
+        if *pos >= len || bytes[*pos] != b'{' {
+            return Err(anyhow!("expected '{{' after else if condition"));
+        }
+        *pos += 1;
+        let mut then_body = vec![];
+        parse_block(source, pos, &mut then_body)?;
+
+        let else_body = parse_else_tail(source, pos, bytes, len)?;
+        Ok(Some(vec![OpCode::If(cond, then_body, else_body)]))
+    } else if *pos < len && bytes[*pos] == b'{' {
+        *pos += 1;
+        let mut body = vec![];
+        parse_block(source, pos, &mut body)?;
+        Ok(Some(body))
+    } else {
+        Err(anyhow!("expected '{{' or 'if' after else"))
+    }
+}
+
 /// Recursive-descent parser for `{ ... }` blocks.
 /// 中文：`{ ... }` 块的递归下降解析器。
 /// 日本語：`{ ... }` ブロックの再帰下降パーサー。
@@ -372,35 +481,17 @@ fn parse_block(source: &str, pos: &mut usize, cmds: &mut Vec<OpCode>) -> Result<
             }
             _ => {
                 // Accumulate instruction text until a boundary token.
-                // 中文：累积指令文本直到遇到边界标记。
-                // 日本語：境界トークンまで命令テキストを蓄積します。
-                // Русский: Накопить текст инструкции до граничного токена.
                 let start = *pos;
                 while *pos < len {
                     match bytes[*pos] {
                         b';' | b'{' | b'}' => break,
                         b'"' => {
-                            // Skip the whole string literal so that
-                            // boundary characters inside it are kept.
-                            // 中文：跳过整个字符串字面量，以便保留其中的边界字符。
-                            // 日本語：文字列リテラル全体をスキップして、内部の境界文字が保持されるようにします。
-                            // Русский: Пропустить весь строковый литерал, чтобы
-                            // граничные символы внутри него сохранились.
-                            *pos += 1; // opening quote
-                                       // 中文：开始引号
-                                       // 日本語：開始引用符
-                                       // Русский: открывающая кавычка
+                            *pos += 1;
                             while *pos < len {
                                 if bytes[*pos] == b'\\' {
-                                    *pos += 2; // skip escape sequence
-                                                // 中文：跳过转义序列
-                                                // 日本語：エスケープシーケンスをスキップ
-                                                // Русский: пропустить escape-последовательность
+                                    *pos += 2;
                                 } else if bytes[*pos] == b'"' {
-                                    *pos += 1; // closing quote
-                                                // 中文：结束引号
-                                                // 日本語：終了引用符
-                                                // Русский: закрывающая кавычка
+                                    *pos += 1;
                                     break;
                                 } else {
                                     *pos += 1;
@@ -411,15 +502,45 @@ fn parse_block(source: &str, pos: &mut usize, cmds: &mut Vec<OpCode>) -> Result<
                     }
                 }
                 let text = source[start..*pos].trim();
-                if !text.is_empty() {
-                    parse_instruction(text, cmds)?;
+                if text.is_empty() {
+                    if *pos < len && bytes[*pos] == b';' {
+                        *pos += 1;
+                    }
+                    continue;
                 }
-                // Consume the trailing `;` if that was the boundary.
-                // 中文：如果边界是尾随的 `;`，则消费它。
-                // 日本語：境界が末尾の `;` だった場合、それを消費します。
-                // Русский: Поглотить завершающую `;`, если она была границей.
-                if *pos < len && bytes[*pos] == b';' {
+
+                if text.starts_with("if ") || text == "if" {
+                    // `if` condition { ... } [else { ... } | else if ...]
+                    let cond_str = if text.len() > 2 {
+                        text[2..].trim()
+                    } else {
+                        return Err(anyhow!("if statement requires a condition"));
+                    };
+                    let cond = parse_expr_str(cond_str)?;
+
+                    if *pos >= len || bytes[*pos] != b'{' {
+                        return Err(anyhow!("expected '{{' after if condition"));
+                    }
                     *pos += 1;
+                    let mut then_body = vec![];
+                    parse_block(source, pos, &mut then_body)?;
+
+                    let else_body = parse_else_tail(source, pos, bytes, len)?;
+                    cmds.push(OpCode::If(cond, then_body, else_body));
+
+                    // Consume optional trailing `;` after the `}`.
+                    while *pos < len && bytes[*pos].is_ascii_whitespace() {
+                        *pos += 1;
+                    }
+                    if *pos < len && bytes[*pos] == b';' {
+                        *pos += 1;
+                    }
+                } else {
+                    parse_instruction(text, cmds)?;
+                    // Consume the trailing `;` if that was the boundary.
+                    if *pos < len && bytes[*pos] == b';' {
+                        *pos += 1;
+                    }
                 }
             }
         }

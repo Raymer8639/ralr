@@ -66,6 +66,49 @@ $a1 = 1 + 2 < 3 * 4;   // true（算术优先于比较）
 
 块内指令共享外层寄存器状态。代码块是 `if`/`while`/`fn` 等后续控制流结构的基础。
 
+## 条件分支（if / else if / else）
+
+使用 `if` 根据条件执行不同的代码块：
+
+```
+$a1 = 42;
+
+// 基本 if
+if $a1 > 0 {
+    _println "positive";
+}
+
+// if/else
+if $a1 > 100 {
+    _println "large";
+} else {
+    _println "not large";
+}
+
+// if/else if/else 链
+if $a1 > 100 {
+    _println "large";
+} else if $a1 == 42 {
+    _println "the answer";
+} else {
+    _println "something else";
+}
+
+// 复杂条件
+if $a1 > 0 && $a2 < 100 || $a3 == 1 {
+    $a4 = 10;
+}
+
+// 嵌套 if
+if $a1 >= 0 {
+    if $a1 == 42 {
+        _println "found it";
+    }
+}
+```
+
+条件表达式必须求值为 `Bool`，支持所有运算符。`if` 语句末尾不需要分号。`else if` 的数量无限制，末尾的 `else` 可选。
+
 ## 注释
 
 ralr 支持 C 风格的注释：
@@ -98,7 +141,7 @@ _print "no newline";
 _print "\n";
 ```
 
-字符串必须用双引号 `"` 包裹，支持转义字符（`\n`、`\t`、`\\`、`\"` 等）。
+字符串必须用双引号 `"` 包裹，支持完整的 ASCII 转义字符（`\n`、`\t`、`\r`、`\\`、`\"`、`\'`、`\a`、`\b`、`\f`、`\v`、`\e`、`\0`、`\xNN`、`\u{NNNN}`），详见 `keywords.md`。
 
 ## 旧式关键字语法（向后兼容）
 

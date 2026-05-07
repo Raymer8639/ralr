@@ -143,6 +143,18 @@ pub fn runner(cmds: &[OpCode], regs: &mut Registers) -> Result<()> {
                 let result = eval_expr(expr, regs);
                 regs.write(*dest, result);
             }
+            OpCode::If(cond, then_body, else_body) => {
+                let cond_val = eval_expr(cond, regs);
+                match cond_val {
+                    Value::Bool(true) => runner(then_body, regs)?,
+                    Value::Bool(false) => {
+                        if let Some(else_b) = else_body {
+                            runner(else_b, regs)?;
+                        }
+                    }
+                    other => panic!("if condition must be Bool, got {other:?}"),
+                }
+            }
         }
     }
     Ok(())
