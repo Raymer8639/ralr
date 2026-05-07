@@ -1,3 +1,8 @@
+//! Tests for [`Register`] discriminant indices and [`Registers`] read/write.
+//! 中文：[`Register`] 判别式索引和 [`Registers`] 读写测试。
+//! 日本語：[`Register`] 判別式インデックスと [`Registers`] 読み書きのテスト。
+//! Русский: Тесты дискриминантных индексов [`Register`] и чтения/записи [`Registers`].
+
 use vm_isa::register::{Register, Registers};
 use vm_isa::value::Value;
 
@@ -17,9 +22,16 @@ fn registers_read_write_roundtrip() {
     regs.write(Register::A1, Value::I32(42));
     assert!(matches!(regs.read(Register::A1), Value::I32(42)));
     // Other registers unchanged
+    // 中文：其他寄存器保持不变
+    // 日本語：他のレジスタは変更なし
+    // Русский: Остальные регистры не изменились
     assert!(matches!(regs.read(Register::A2), Value::None));
 }
 
+/// Register indices are the contract between the enum and the array layout.
+/// 中文：寄存器索引是枚举与数组布局之间的契约。
+/// 日本語：レジスタインデックスは列挙型と配列レイアウトの間の契約です。
+/// Русский: Индексы регистров — это контракт между перечислением и макетом массива.
 #[test]
 fn register_index_is_stable() {
     assert_eq!(Register::A1.index(), 0);

@@ -1,3 +1,8 @@
+//! Tests for [`Value`] arithmetic operators and error behaviour.
+//! 中文：[`Value`] 算术运算符和错误行为测试。
+//! 日本語：[`Value`] 算術演算子とエラー動作のテスト。
+//! Русский: Тесты арифметических операторов [`Value`] и поведения при ошибках.
+
 use vm_isa::value::Value;
 
 #[test]
@@ -66,12 +71,20 @@ fn sub_i128() {
     assert!(matches!(result, Value::I128(-15)));
 }
 
+/// Arithmetic operators panic when the operand types don't match.
+/// 中文：当操作数类型不匹配时，算术运算符会 panic。
+/// 日本語：オペランドの型が一致しない場合、算術演算子はパニックします。
+/// Русский: Арифметические операторы паникуют, когда типы операндов не совпадают.
 #[test]
 #[should_panic]
 fn type_mismatch_panics() {
     let _ = Value::I32(1) + Value::F64(2.0);
 }
 
+/// Operations involving [`Value::None`] always panic.
+/// 中文：涉及 [`Value::None`] 的运算总是 panic。
+/// 日本語：[`Value::None`] を含む演算は常にパニックします。
+/// Русский: Операции с участием [`Value::None`] всегда вызывают панику.
 #[test]
 #[should_panic]
 fn none_value_panics() {

@@ -22,7 +22,7 @@ RUST_LOG=trace ralr <file.abin> # Run VM with full tracing output
 ralr-asm examples/add.ralr -o add.abin && ralr add.abin
 ```
 
-`.abin` files are generated artifacts and should not be committed.
+`.abin` files are generated artifacts — do not commit ad-hoc outputs. The committed `examples/add.abin` and `examples/print.abin` are test fixtures (the `tests/` workspace deserializes `add.abin` to validate binary format stability).
 
 ## Architecture
 
@@ -58,7 +58,7 @@ Each instruction must be terminated with `;`. Lines can contain multiple `;`-del
 - `reader.rs` — Parses instruction tokens. `to_value()` converts literal tokens only (no register prefix): string literals must be double-quoted (`"..."`) and are processed through `unescape_str()` for escape sequence handling (`\n`, `\t`, `\\`, `\"`, `\r`, `\0`, `\xNN`, `\u{NNNN}`); bare words `true`/`false` map to `Bool`; numbers are parsed via a `try_parse!` macro chain (`u8` → `u32` → `u128` → `i32` → `i128` → `f32` → `f64`). `to_register()` handles `$a1`–`$a5` → `Register::A1`–`A5`. `to_operand()` dispatches: `$`-prefixed tokens go to `Operand::Register`, everything else to `Operand::Literal`. `tokenize()` splits instructions on whitespace while respecting quoted strings as single tokens. Unrecognized tokens error. Supports `add`, `sub`, `mul`, `div`, `_println`, and `_print` keywords. Unrecognized keywords are silently ignored via the `_ => ()` catch-all.
 
 ### `ralr` (VM runtime — `bin/ralr/`)
-Reads `.abin` binary files, deserializes them, and executes instructions against an `AllRegister` state.
+Reads `.abin` binary files, deserializes them, and executes instructions against a `Registers` state.
 
 - `main.rs` — Async (tokio). Uses `tracing` for structured logging. Reads the file, bincode-deserializes to `Vec<OpCode>`, calls `runner()`.
 - `runner.rs` — Synchronous execution loop. `resolve()` dispatches `Operand::Literal` (clone) vs `Operand::Register` (array index into `Registers`). Arithmetic ops resolve both operands, perform the operation, and write the result into the destination register. `Println`/`Print` resolve and display. `OpCode::Print` explicitly flushes stdout since `print!` does not.

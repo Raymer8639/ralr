@@ -1,0 +1,67 @@
+_println "=== 算术运算 ===";
+$a1 = 10 + 5;
+_println $a1;
+$a1 = 10 - 3;
+_println $a1;
+$a1 = 6 * 7;
+_println $a1;
+$a1 = 100 / 4;
+_println $a1;
+$a1 = 17 % 5;
+_println $a1;
+
+_println "=== 比较运算 ===";
+$a1 = 10 == 10;
+_println $a1;
+$a1 = 10 != 5;
+_println $a1;
+$a1 = 3 < 7;
+_println $a1;
+$a1 = 7 > 3;
+_println $a1;
+$a1 = 5 <= 5;
+_println $a1;
+$a1 = 5 >= 5;
+_println $a1;
+
+_println "=== 逻辑运算 ===";
+$a1 = true && true;
+_println $a1;
+$a1 = true || false;
+_println $a1;
+$a1 = !false;
+_println $a1;
+
+_println "=== 位运算 ===";
+$a1 = 240 & 15;
+_println $a1;
+$a1 = 240 | 15;
+_println $a1;
+$a1 = 255 ^ 15;
+_println $a1;
+$a1 = ~0;
+_println $a1;
+
+_println "=== 移位运算 ===";
+$a1 = 1 << 4;
+_println $a1;
+$a1 = 128 >> 3;
+_println $a1;
+
+_println "=== 一元运算 ===";
+$a1 = -(5);
+_println $a1;
+$a1 = !true;
+_println $a1;
+$a1 = ~240;
+_println $a1;
+
+_println "=== 复杂表达式 ===";
+$a1 = (10 + 5) * 2 - 3;
+_println $a1;
+$a1 = ((3 + 2) * 4 > 18) && (10 != 5);
+_println $a1;
+$a1 = (5 << 2) + (16 >> 1);
+_println $a1;
+
+_println "done";

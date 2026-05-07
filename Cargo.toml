@@ -5,7 +5,6 @@ members = ["bin/ralr", "bin/ralr-asm", "crates/vm-isa"]
 [workspace.dependencies]
 anyhow = "1.0.102"
 clap = "4.6.1"
-tokio = "1.52.2"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 vm_isa = { path = "crates/vm-isa" }
