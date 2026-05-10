@@ -118,6 +118,18 @@ if $a1 > 0 && $a2 < 100 {
 
 `if` 语句可任意嵌套，`if` 语句末尾不需要分号。
 
+## 循环语句(while)
+
+### 基本语法
+
+```
+while condition {
+   // do_something 
+}
+```
+condition 必须为 bool 类型，为 true 时会一直执行代码块，直到为 false 时停止
+
+
 ## 代码块
 
 使用 `{` `}` 将多条指令组织为一个代码块。代码块可以嵌套，是后续 `if`/`while`/`fn` 等控制流结构的基础。
@@ -160,6 +172,36 @@ if $a1 > 0 && $a2 < 100 {
 |------|------|------|
 | `_println` | 打印并换行 | `_println $a1` / `_println "text"` |
 | `_print` | 打印（不换行） | `_print "hello"` / `_print "\n"` |
+
+## I/O 操作（`io` 关键字）
+
+`io` 关键字统一所有 I/O 操作，通过子命令区分：
+
+```
+io write 操作数;       // 输出（不换行）
+io writeln 操作数;     // 输出（换行）
+io read $寄存器;       // 从标准输入读取，解析为 Value，存入寄存器
+io readln $寄存器;     // 从标准输入读取一行，作为 String 存入寄存器
+```
+
+| 子命令 | 参数 | 说明 |
+|--------|------|------|
+| `write` | 操作数（字面量或寄存器） | 输出到标准输出，末尾不换行 |
+| `writeln` | 操作数（字面量或寄存器） | 输出到标准输出，末尾换行 |
+| `read` | 目标寄存器 | 从标准输入读取一行，按类型推断链解析（U8→U32→U128→I32→I128→F32→F64→Bool→String 回退） |
+| `readln` | 目标寄存器 | 从标准输入读取一行，去除尾部换行符，始终存为 String |
+
+示例：
+
+```
+io writeln "hello world";
+io write "answer: ";
+io writeln 42;
+io read $a1;            // 用户输入 123 → $a1 = U8(123)
+io readln $a2;          // 用户输入 hello → $a2 = String("hello")
+```
+
+> 旧式 `_print` / `_println` 关键字仍可使用，向后兼容。
 
 ## 寄存器
 

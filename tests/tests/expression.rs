@@ -4,7 +4,7 @@
 //! Русский: Тесты парсинга, вычисления и сериализации выражений.
 
 use ralr_asm::reader;
-use vm_isa::op_code::{BinOp, Expr, OpCode, UnOp};
+use vm_isa::op_code::{BinOp, Expr, IoOp, OpCode, Operand, UnOp};
 use vm_isa::register::{Register, Registers};
 use vm_isa::value::Value;
 
@@ -848,4 +848,159 @@ fn if_without_else_roundtrip() {
         }
         _ => panic!("expected If"),
     }
+}
+
+// ── IO operation tests ────────────────────────────────────────────────
+
+#[test]
+fn parse_io_write_literal() {
+    let ops = reader::parse("io write \"hello\";").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::IO(IoOp::Write(Operand::Literal(Value::String(s)))) => {
+            assert_eq!(s, "hello");
+        }
+        other => panic!("expected IO(Write(Literal(String))), got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_io_writeln_literal() {
+    let ops = reader::parse("io writeln \"world\";").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::IO(IoOp::Writeln(Operand::Literal(Value::String(s)))) => {
+            assert_eq!(s, "world");
+        }
+        other => panic!("expected IO(Writeln(Literal(String))), got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_io_write_number() {
+    let ops = reader::parse("io write 42;").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::IO(IoOp::Write(Operand::Literal(Value::U8(42)))) => {}
+        other => panic!("expected IO(Write(Literal(U8(42)))), got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_io_write_register() {
+    let ops = reader::parse("io write $a1;").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::IO(IoOp::Write(Operand::Register(Register::A1))) => {}
+        other => panic!("expected IO(Write(Register(A1))), got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_io_read_register() {
+    let ops = reader::parse("io read $a3;").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::IO(IoOp::Read(Register::A3)) => {}
+        other => panic!("expected IO(Read(A3)), got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_io_readln_register() {
+    let ops = reader::parse("io readln $a5;").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::IO(IoOp::Readln(Register::A5)) => {}
+        other => panic!("expected IO(Readln(A5)), got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_io_unknown_subcommand() {
+    let result = reader::parse("io foobar 42;");
+    assert!(result.is_err());
+}
+
+#[test]
+fn parse_io_write_missing_operand() {
+    let result = reader::parse("io write;");
+    assert!(result.is_err());
+}
+
+#[test]
+fn parse_io_read_missing_register() {
+    let result = reader::parse("io read;");
+    assert!(result.is_err());
+}
+
+#[test]
+fn io_write_roundtrip() {
+    let ops = vec![OpCode::IO(IoOp::Write(Operand::Literal(Value::String(
+        "test".into(),
+    ))))];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    assert_eq!(deserialized.len(), 1);
+    match &deserialized[0] {
+        OpCode::IO(IoOp::Write(Operand::Literal(Value::String(s)))) => {
+            assert_eq!(s, "test");
+        }
+        other => panic!("expected IO(Write), got {other:?}"),
+    }
+}
+
+#[test]
+fn io_writeln_roundtrip() {
+    let ops = vec![OpCode::IO(IoOp::Writeln(Operand::Literal(Value::U8(99))))];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    assert_eq!(deserialized.len(), 1);
+    match &deserialized[0] {
+        OpCode::IO(IoOp::Writeln(Operand::Literal(Value::U8(99)))) => {}
+        other => panic!("expected IO(Writeln), got {other:?}"),
+    }
+}
+
+#[test]
+fn io_read_roundtrip() {
+    let ops = vec![OpCode::IO(IoOp::Read(Register::A2))];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    assert_eq!(deserialized.len(), 1);
+    match &deserialized[0] {
+        OpCode::IO(IoOp::Read(Register::A2)) => {}
+        other => panic!("expected IO(Read), got {other:?}"),
+    }
+}
+
+#[test]
+fn io_readln_roundtrip() {
+    let ops = vec![OpCode::IO(IoOp::Readln(Register::A4))];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    assert_eq!(deserialized.len(), 1);
+    match &deserialized[0] {
+        OpCode::IO(IoOp::Readln(Register::A4)) => {}
+        other => panic!("expected IO(Readln), got {other:?}"),
+    }
+}
+
+#[test]
+fn io_write_executes_without_panic() {
+    let regs = run("io write \"ok\";");
+    // Verify no side effects on registers from write.
+    assert_eq!(regs.read(Register::A1), &Value::None);
+}
+
+#[test]
+fn io_writeln_executes_without_panic() {
+    let regs = run("io writeln 42;");
+    assert_eq!(regs.read(Register::A1), &Value::None);
+}
+
+#[test]
+fn io_write_with_register_value() {
+    let regs = run("$a1 = 100; io write $a1;");
+    assert_eq!(regs.read(Register::A1), &Value::U8(100));
 }

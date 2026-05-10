@@ -109,6 +109,16 @@ if $a1 >= 0 {
 
 条件表达式必须求值为 `Bool`，支持所有运算符。`if` 语句末尾不需要分号。`else if` 的数量无限制，末尾的 `else` 可选。
 
+## 循环语句（while）
+
+使用`while`关键字，根据条件判断是（true）否（false）一直执行:
+```
+$a1 = 0;
+while $a1 < 10 {
+    $a1 = $a1 + 1;
+    io writeln $a1
+}
+```
 ## 注释
 
 ralr 支持 C 风格的注释：
@@ -132,13 +142,28 @@ _println "this // is not a comment";
 
 ## 打印输出
 
-使用 `_println`（打印并换行）和 `_print`（打印不换行）输出值：
+使用 `_println`（打印并换行）和 `_print`（打印不换行）输出值。推荐使用新的 `io` 关键字统一 I/O 操作：
 
 ```
+// 推荐：io 关键字
+io writeln $a1;
+io writeln "hello world";
+io write "no newline";
+io write "\n";
+
+// 旧式关键字（向后兼容）
 _println $a1;
-_println "hello world";
-_print "no newline";
-_print "\n";
+_print "hello";
+```
+
+### 读取输入
+
+`io read` 从标准输入读取并自动解析为合适的类型，`io readln` 读取一行存为字符串：
+
+```
+io read $a1;       // 输入 42 → 解析为数字
+io readln $a2;     // 输入 hello → 存为字符串
+io writeln $a1;    // 输出结果
 ```
 
 字符串必须用双引号 `"` 包裹，支持完整的 ASCII 转义字符（`\n`、`\t`、`\r`、`\\`、`\"`、`\'`、`\a`、`\b`、`\f`、`\v`、`\e`、`\0`、`\xNN`、`\u{NNNN}`），详见 `keywords.md`。

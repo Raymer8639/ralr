@@ -1,0 +1,34 @@
+// IO 操作演示
+
+_println "=== io write/writeln ===";
+// 中文：write 不换行输出，writeln 换行输出
+io writeln "hello from io writeln";
+io write "no newline: ";
+io writeln "continued";
+
+_println "=== io with register values ===";
+// 中文：io 关键字支持寄存器和字面量混合使用
+$a1 = 42;
+io write "register a1 = ";
+io writeln $a1;
+
+_println "=== io write with expressions ===";
+$a2 = 100;
+$a3 = $a2 + 50;
+io writeln $a3;
+
+_println "=== io write with bool ===";
+io writeln true;
+io writeln false;
+
+_println "=== legacy keywords still work ===";
+// 中文：旧式 _print/_println 关键字仍然可用
+_println "this is _println";
+_print "this is _print\n";
+
+io readln $a1;
+io writeln $a1;
+
+io read $a2;
+io writeln $a2;
+

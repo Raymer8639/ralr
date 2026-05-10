@@ -1,33 +1,24 @@
 //! Synchronous instruction execution loop.
 //! 中文：同步指令执行循环。
-//! 日本語：同期命令実行ループ。
-//! Русский: Синхронный цикл выполнения инструкций.
 //!
 //! Resolves operands (literals or register references) against the
 //! register file and dispatches each opcode.
 //! 中文：根据寄存器文件解析操作数（字面量或寄存器引用）并分派每条操作码。
-//! 日本語：レジスタファイルに対してオペランド（リテラルまたはレジスタ参照）を解決し、各オペコードをディスパッチします。
-//! Русский: Разрешает операнды (литералы или ссылки на регистры) относительно
-//! файла регистров и диспетчеризует каждый опкод.
 
 use std::io::{self, Write};
 
 use anyhow::Result;
 use vm_isa::{
-    op_code::{BinOp, Expr, OpCode, Operand, UnOp},
+    op_code::{BinOp, Expr, IoOp, OpCode, Operand, UnOp},
     register::Registers,
     value::Value,
 };
 
 /// Resolves an operand to a concrete value.
 /// 中文：将操作数解析为具体值。
-/// 日本語：オペランドを具体的な値に解決します。
-/// Русский: Разрешает операнд в конкретное значение.
 ///
 /// Literals are cloned; register references are looked up from `regs`.
 /// 中文：字面量被克隆；寄存器引用从 `regs` 中查找。
-/// 日本語：リテラルはクローンされ、レジスタ参照は `regs` から検索されます。
-/// Русский: Литералы клонируются; ссылки на регистры извлекаются из `regs`.
 fn resolve(operand: &Operand, regs: &Registers) -> Value {
     match operand {
         Operand::Literal(v) => v.clone(),
@@ -37,16 +28,11 @@ fn resolve(operand: &Operand, regs: &Registers) -> Value {
 
 /// Recursively evaluates an expression tree against the register file.
 /// 中文：根据寄存器文件递归计算表达式树。
-/// 日本語：レジスタファイルに対して式ツリーを再帰的に評価します。
-/// Русский: Рекурсивно вычисляет дерево выражения относительно файла регистров.
 ///
 /// Register references are resolved from the current register state. All
 /// arithmetic, comparison, logical, bitwise, and shift operators are
 /// dispatched here.
 /// 中文：寄存器引用从当前寄存器状态解析。所有算术、比较、逻辑、位和移位运算符都在此处分派。
-/// 日本語：レジスタ参照は現在のレジスタ状態から解決されます。すべての算術、比較、論理、ビット、シフト演算子がここでディスパッチされます。
-/// Русский: Ссылки на регистры разрешаются из текущего состояния регистров. Все
-/// арифметические, сравнительные, логические, побитовые и сдвиговые операторы диспетчеризуются здесь.
 fn eval_expr(expr: &Expr, regs: &Registers) -> Value {
     match expr {
         Expr::Literal(v) => v.clone(),
@@ -86,30 +72,60 @@ fn eval_expr(expr: &Expr, regs: &Registers) -> Value {
     }
 }
 
+/// Parses a string read from stdin into a [`Value`], using the same
+/// numeric-inference chain as the assembler: U8 → U32 → U128 → I32 →
+/// I128 → F32 → F64. Recognizes "true"/"false" as Bool. Falls back to
+/// String for anything else.
+/// 中文：将从标准输入读取的字符串解析为 [`Value`]，使用与汇编器相同的数字推断链：U8 → U32 → U128 → I32 → I128 → F32 → F64。识别 "true"/"false" 为 Bool。其他情况回退到 String。
+fn parse_stdin_value(s: &str) -> Value {
+    let s = s.trim();
+    if s.is_empty() {
+        return Value::String(String::new());
+    }
+    if s == "true" {
+        return Value::Bool(true);
+    }
+    if s == "false" {
+        return Value::Bool(false);
+    }
+    if let Ok(v) = s.parse::<u8>() {
+        return Value::U8(v);
+    }
+    if let Ok(v) = s.parse::<u32>() {
+        return Value::U32(v);
+    }
+    if let Ok(v) = s.parse::<u128>() {
+        return Value::U128(v);
+    }
+    if let Ok(v) = s.parse::<i32>() {
+        return Value::I32(v);
+    }
+    if let Ok(v) = s.parse::<i128>() {
+        return Value::I128(v);
+    }
+    if let Ok(v) = s.parse::<f32>() {
+        return Value::F32(v);
+    }
+    if let Ok(v) = s.parse::<f64>() {
+        return Value::F64(v);
+    }
+    Value::String(s.to_string())
+}
+
 /// Executes a sequence of opcodes against a register file.
 /// 中文：对寄存器文件执行一系列操作码。
-/// 日本語：レジスタファイルに対して一連のオペコードを実行します。
-/// Русский: Выполняет последовательность опкодов на файле регистров.
 ///
 /// Arithmetic instructions resolve both operands, perform the operation,
 /// and write the result into the destination register. Print instructions
 /// resolve and write directly to stdout. Blocks recurse with the same
 /// register context. Expressions evaluate against the register file.
 /// 中文：算术指令解析两个操作数，执行运算，并将结果写入目标寄存器。打印指令解析后直接写入标准输出。块以相同的寄存器上下文递归执行。表达式根据寄存器文件进行计算。
-/// 日本語：算術命令は両方のオペランドを解決し、演算を実行し、結果を宛先レジスタに書き込みます。印刷命令は解決して直接標準出力に書き込みます。ブロックは同じレジスタコンテキストで再帰します。式はレジスタファイルに対して評価されます。
-/// Русский: Арифметические инструкции разрешают оба операнда, выполняют операцию и
-/// записывают результат в целевой регистр. Инструкции печати разрешают и выводят
-/// непосредственно в stdout. Блоки рекурсивно выполняются с тем же контекстом регистров.
-/// Выражения вычисляются относительно файла регистров.
 ///
 /// # Panics
 ///
 /// Arithmetic operators on [`Value`] panic on type mismatches (e.g.
 /// `I32 + String`). This kills the VM — there is no error recovery.
 /// 中文：[`Value`] 上的算术运算符在类型不匹配时会 panic（例如 `I32 + String`）。这会终止虚拟机 — 没有错误恢复。
-/// 日本語：[`Value`] の算術演算子は型の不一致でパニックします（例：`I32 + String`）。これにより VM は停止します — エラー回復はありません。
-/// Русский: Арифметические операторы на [`Value`] паникуют при несовпадении типов
-/// (например, `I32 + String`). Это убивает ВМ — восстановление после ошибок отсутствует.
 pub fn runner(cmds: &[OpCode], regs: &mut Registers) -> Result<()> {
     for cmd in cmds {
         match cmd {
@@ -155,6 +171,54 @@ pub fn runner(cmds: &[OpCode], regs: &mut Registers) -> Result<()> {
                     other => panic!("if condition must be Bool, got {other:?}"),
                 }
             }
+            OpCode::IO(op) => match op {
+                // Unified I/O dispatch.
+                // 中文：统一的 I/O 分派。
+                IoOp::Write(val) => {
+                    // Print operand without trailing newline, flush stdout.
+                    // 中文：打印操作数，末尾不换行，刷新标准输出。
+                    print!("{}", resolve(val, regs));
+                    io::stdout().flush().unwrap();
+                }
+                IoOp::Writeln(val) => {
+                    // Print operand followed by a newline.
+                    // 中文：打印操作数并换行。
+                    println!("{}", resolve(val, regs));
+                }
+                IoOp::Read(reg) => {
+                    // Read stdin line, parse as Value via type-inference chain.
+                    // 中文：从标准输入读取一行，通过类型推断链解析为 Value。
+                    let mut input = String::new();
+                    io::stdin().read_line(&mut input).unwrap();
+                    let val = parse_stdin_value(&input);
+                    regs.write(*reg, val);
+                }
+                IoOp::Readln(reg) => {
+                    // Read stdin line, store as String, strip trailing newline.
+                    // 中文：从标准输入读取一行，作为 String 存入，去除尾部换行符。
+                    let mut input = String::new();
+                    io::stdin().read_line(&mut input).unwrap();
+                    if input.ends_with('\n') {
+                        input.pop();
+                        if input.ends_with('\r') {
+                            input.pop();
+                        }
+                    }
+                    regs.write(*reg, Value::String(input));
+                }
+            },
+            OpCode::While(expr, cmds) => loop {
+                let value = eval_expr(expr, regs);
+                match value {
+                    Value::Bool(true) => {
+                        runner(cmds, regs)?;
+                    }
+                    Value::Bool(false) => {
+                        break;
+                    }
+                    error => panic!("{:?}", error),
+                }
+            },
         }
     }
     Ok(())

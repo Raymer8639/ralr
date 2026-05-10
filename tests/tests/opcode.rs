@@ -56,7 +56,7 @@ fn serialize_deserialize_roundtrip() {
 /// Это гарантирует стабильность бинарного формата.
 #[test]
 fn deserialize_example_add_file() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/add.abin");
+    let path = "../examples/add.abin";
     let bytes = std::fs::read(path).expect("failed to read add.abin example file");
     let ops: Vec<OpCode> = bincode::deserialize(&bytes).expect("failed to deserialize add.abin");
 
