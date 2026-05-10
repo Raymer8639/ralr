@@ -64,6 +64,23 @@ Use `(` `)` to group sub-expressions and override default precedence:
 $a1 = (1 + 2) * 3;    // 9, not 7
 ```
 
+## Code Blocks
+
+Use `{` `}` to organize multiple instructions into a code block. Blocks can be nested and serve as the foundation for control flow structures (`if`, `while`, `fn`, etc.).
+
+```
+{
+    instruction1;
+    instruction2;
+    {
+        instruction3;   // nested block
+    }
+    instruction4;
+}
+```
+
+Instructions inside a block share the outer register state. Empty blocks `{ }` are valid.
+
 ## Conditional Branching (if / else if / else)
 
 Use `if` to execute code blocks based on a condition:
@@ -118,32 +135,64 @@ if $a1 > 0 && $a2 < 100 {
 
 `if` statements can be arbitrarily nested. `if` statements do not require a trailing semicolon.
 
+## Variable Declaration (`let` / `let mut`)
+
+Variables are named, dynamically-allocated values stored separately from the fixed register file. They are declared with `let` and may be optionally declared as mutable with `let mut`:
+
+```
+let name = expression;
+let mut name = expression;
+```
+
+### Basic Syntax
+
+```
+let x = 42;             // immutable variable
+let mut y = 10;         // mutable variable (can be reassigned)
+y = y + 1;              // reassign mutable variable
+io writeln y;           // prints 11
+```
+
+- `let` declares an immutable variable. Attempting to reassign it will cause a runtime panic.
+- `let mut` declares a mutable variable that can be reassigned via `name = expression;`.
+- Variables are accessible in expressions by name: `$a1 = x + y;`.
+- Variables live in a hashmap parallel to the register file and persist across block boundaries.
+
+### Variable Assignment
+
+Mutable variables can be reassigned using the `name = expression;` syntax:
+
+```
+let mut count = 0;
+count = count + 1;
+```
+
+The `=` sign after a non-keyword, non-register token triggers variable/expression assignment parsing.
+
 ## Loop Statement (while)
 
 ### Basic Syntax
 ```
 while condition {
-   // do_something 
+   instructions;
 }
 ```
-The `condition` must be of type `bool`. When it evaluates to `true`, the code block will continue to execute until it becomes `false`.
+The `condition` must evaluate to `Bool`. When `true`, the body executes once and the condition is re-evaluated. The loop repeats until the condition becomes `false`.
 
-## Code Blocks
-
-Use `{` `}` to organize multiple instructions into a code block. Blocks can be nested and serve as the foundation for control flow structures (`if`, `while`, `fn`, etc.).
-
+### Example with Variable
 ```
-{
-    instruction1;
-    instruction2;
-    {
-        instruction3;   // nested block
-    }
-    instruction4;
+let mut count = 0;
+while count < 5 {
+    io writeln count;
+    count = count + 1;
 }
+// Prints 0, 1, 2, 3, 4 — each on a separate line
 ```
 
-Instructions inside a block share the outer register state. Empty blocks `{ }` are valid.
+- The condition is re-evaluated on every iteration.
+- If the condition is `false` initially, the body never executes.
+- Variables declared inside the loop body persist after the loop ends.
+- Non-`Bool` conditions cause a runtime panic.
 
 ## Instructions (Legacy Keyword Syntax)
 
@@ -170,6 +219,68 @@ Accept one operand (immediate or register) and write it to stdout:
 |------------|-------------|---------|
 | `_println` | Print with newline | `_println $a1` / `_println "text"` |
 | `_print` | Print without newline | `_print "hello"` / `_print "\n"` |
+
+## Functions (`fn`, `call`, `return`)
+
+Functions are named, parameterized blocks of code that can be called with arguments and return values.
+
+### Defining a Function
+
+```
+fn name(param1, param2) {
+    body;
+    return expr;
+}
+```
+
+- Parameters are comma-separated identifiers.
+- The function body may contain any number of instructions.
+- `return expr;` provides the return value. `return;` (without expression) returns `None`.
+
+### Calling a Function
+
+```
+$reg = call name(arg1, arg2);
+```
+
+- Arguments are comma-separated expressions.
+- The return value is stored in the destination register or variable.
+- Parameter count must match the function definition; mismatches cause a runtime panic.
+- Functions can call other functions.
+
+### Scoping
+
+- Parameters are local to the function call and shadow outer variables of the same name.
+- Outer variables are restored after the function returns.
+- Functions can access variables from their enclosing scope (closure-like behavior).
+
+### Examples
+
+```
+fn add(a, b) {
+    return a + b;
+}
+$a1 = call add(3, 4);
+
+fn double(n) {
+    return n + n;
+}
+$a1 = call double(5);
+
+// Function with no parameters
+fn answer() {
+    return 42;
+}
+$a1 = call answer();
+
+// Function with conditional logic
+fn max(a, b) {
+    if a > b {
+        return a;
+    }
+    return b;
+}
+```
 
 ## I/O Operations (`io` Keyword)
 

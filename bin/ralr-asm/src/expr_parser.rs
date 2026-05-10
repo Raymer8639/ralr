@@ -3,8 +3,9 @@
 
 use anyhow::{Result, anyhow};
 use vm_isa::{
-    op_code::{BinOp, Expr, UnOp},
+    op_code::{BinOp, Expr, Operand, UnOp},
     value::Value,
+    variable::Variable,
 };
 
 use crate::reader::{to_register, to_value};
@@ -181,10 +182,10 @@ fn parse_prefix(tokens: &[&str], pos: usize) -> Result<(Expr, usize)> {
             // convert it directly to a negative signed value so that
             // `-128` becomes `I32(-128)` instead of panicking on Neg<U8>.
             // 中文：常量折叠：如果操作数是无符号字面量，直接转换为有符号负数。
-            if let Expr::Literal(ref v) = inner
+            if let Expr::Operand(Operand::Literal(ref v)) = inner
                 && let Some(folded) = try_negate_value(v)
             {
-                return Ok((Expr::Literal(folded), consumed + 1));
+                return Ok((Expr::Operand(Operand::Literal(folded)), consumed + 1));
             }
             Ok((Expr::Unary(UnOp::Neg, Box::new(inner)), consumed + 1))
         }
@@ -196,8 +197,34 @@ fn parse_prefix(tokens: &[&str], pos: usize) -> Result<(Expr, usize)> {
             let (inner, consumed) = parse_expression(tokens, pos + 1, 12)?;
             Ok((Expr::Unary(UnOp::BitNot, Box::new(inner)), consumed + 1))
         }
-        s if s.starts_with('$') => Ok((Expr::Register(to_register(s)?), 1)),
-        _ => Ok((Expr::Literal(to_value(tok)?), 1)),
+        s => {
+            if s.starts_with('$') {
+                // Register reference: $a1–$a5
+                // 中文：寄存器引用：$a1–$a5
+                Ok((Expr::Operand(Operand::Register(to_register(s)?)), 1))
+            } else if s.starts_with('"') {
+                // Quoted string literal — must parse as a valid value.
+                // Invalid escape sequences (e.g. \w) propagate as an error
+                // rather than silently falling through to a variable reference.
+                // 中文：带引号的字符串字面量 — 必须解析为有效值。无效的转义序列（如 \w）会作为错误传播，而非静默回退为变量引用。
+                Ok((Expr::Operand(Operand::Literal(to_value(s)?)), 1))
+            } else {
+                // Bare word — try literal (number, bool) first,
+                // fall back to named variable reference.
+                // 中文：裸词 — 首先尝试字面量（数字、布尔值），回退到命名变量引用。
+                let operand = match to_value(s) {
+                    Ok(v) => Operand::Literal(v),
+                    Err(_) => Operand::Variable(
+                        s.to_string(),
+                        Variable {
+                            is_mut: false,
+                            value: Value::None,
+                        },
+                    ),
+                };
+                Ok((Expr::Operand(operand), 1))
+            }
+        }
     }
 }
 

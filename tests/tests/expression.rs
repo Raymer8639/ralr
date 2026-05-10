@@ -184,14 +184,14 @@ fn and_val_on_int_panics() {
 fn parse_simple_literal_assignment() {
     let ops = reader::parse("$a1 = 42;").unwrap();
     assert_eq!(ops.len(), 1);
-    assert!(matches!(&ops[0], OpCode::Expr(Expr::Literal(Value::U8(42)), Register::A1)));
+    assert!(matches!(&ops[0], OpCode::Expr(Expr::Operand(Operand::Literal(Value::U8(42))), Operand::Register(Register::A1))));
 }
 
 #[test]
 fn parse_register_assignment() {
     let ops = reader::parse("$a2 = $a1;").unwrap();
     assert_eq!(ops.len(), 1);
-    assert!(matches!(&ops[0], OpCode::Expr(Expr::Register(Register::A1), Register::A2)));
+    assert!(matches!(&ops[0], OpCode::Expr(Expr::Operand(Operand::Register(Register::A1)), Operand::Register(Register::A2))));
 }
 
 #[test]
@@ -200,12 +200,12 @@ fn parse_binary_with_precedence() {
     let ops = reader::parse("$a1 = 1 + 2 * 3;").unwrap();
     assert_eq!(ops.len(), 1);
     match &ops[0] {
-        OpCode::Expr(expr, Register::A1) => match expr {
+        OpCode::Expr(expr, Operand::Register(Register::A1)) => match expr {
             Expr::Binary(lhs, BinOp::Add, rhs) => {
-                assert!(matches!(**lhs, Expr::Literal(Value::U8(1))));
+                assert!(matches!(**lhs, Expr::Operand(Operand::Literal(Value::U8(1)))));
                 if let Expr::Binary(ll, BinOp::Mul, rr) = &**rhs {
-                    assert!(matches!(**ll, Expr::Literal(Value::U8(2))));
-                    assert!(matches!(**rr, Expr::Literal(Value::U8(3))));
+                    assert!(matches!(**ll, Expr::Operand(Operand::Literal(Value::U8(2)))));
+                    assert!(matches!(**rr, Expr::Operand(Operand::Literal(Value::U8(3)))));
                 } else {
                     panic!("expected Mul");
                 }
@@ -223,7 +223,7 @@ fn parse_parentheses_override_precedence() {
     match &ops[0] {
         OpCode::Expr(expr, _) => match expr {
             Expr::Binary(lhs, BinOp::Mul, rhs) => {
-                assert!(matches!(**rhs, Expr::Literal(Value::U8(3))));
+                assert!(matches!(**rhs, Expr::Operand(Operand::Literal(Value::U8(3)))));
                 assert!(matches!(**lhs, Expr::Binary(_, BinOp::Add, _)));
             }
             _ => panic!("expected Mul"),
@@ -237,7 +237,7 @@ fn parse_unary_negation() {
     // -5 is constant-folded to Literal(I32(-5))
     let ops = reader::parse("$a1 = -5;").unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(v), _) => {
+        OpCode::Expr(Expr::Operand(Operand::Literal(v)), _) => {
             assert_eq!(v, &Value::I32(-5));
         }
         _ => panic!("expected folded literal"),
@@ -249,7 +249,7 @@ fn parse_double_unary() {
     // --5 is constant-folded: inner -5 → I32(-5), outer -(−5) → I32(5)
     let ops = reader::parse("$a1 = --5;").unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(v), _) => {
+        OpCode::Expr(Expr::Operand(Operand::Literal(v)), _) => {
             assert_eq!(v, &Value::I32(5));
         }
         _ => panic!("expected folded literal"),
@@ -261,7 +261,7 @@ fn parse_logical_not() {
     let ops = reader::parse("$a1 = !true;").unwrap();
     match &ops[0] {
         OpCode::Expr(Expr::Unary(UnOp::Not, inner), _) => {
-            assert!(matches!(**inner, Expr::Literal(Value::Bool(true))));
+            assert!(matches!(**inner, Expr::Operand(Operand::Literal(Value::Bool(true)))));
         }
         _ => panic!("expected Unary Not"),
     }
@@ -272,7 +272,7 @@ fn parse_bitwise_not() {
     let ops = reader::parse("$a1 = ~0;").unwrap();
     match &ops[0] {
         OpCode::Expr(Expr::Unary(UnOp::BitNot, inner), _) => {
-            assert!(matches!(**inner, Expr::Literal(Value::U8(0))));
+            assert!(matches!(**inner, Expr::Operand(Operand::Literal(Value::U8(0)))));
         }
         _ => panic!("expected Unary BitNot"),
     }
@@ -298,7 +298,7 @@ fn parse_bitwise_precedence() {
     match &ops[0] {
         OpCode::Expr(Expr::Binary(lhs, BinOp::BitOr, rhs), _) => {
             assert!(matches!(**lhs, Expr::Binary(_, BinOp::BitAnd, _)));
-            assert!(matches!(**rhs, Expr::Literal(Value::U8(3))));
+            assert!(matches!(**rhs, Expr::Operand(Operand::Literal(Value::U8(3)))));
         }
         _ => panic!("expected BitOr"),
     }
@@ -343,60 +343,60 @@ fn parse_old_keywords_still_work() {
 fn expr_roundtrip() {
     let ops = vec![OpCode::Expr(
         Expr::Binary(
-            Box::new(Expr::Literal(Value::U8(1))),
+            Box::new(Expr::Operand(Operand::Literal(Value::U8(1)))),
             BinOp::Add,
-            Box::new(Expr::Literal(Value::U8(2))),
+            Box::new(Expr::Operand(Operand::Literal(Value::U8(2)))),
         ),
-        Register::A1,
+        Operand::Register(Register::A1),
     )];
     let bytes = bincode::serialize(&ops).unwrap();
     let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
     assert_eq!(deserialized.len(), 1);
-    assert!(matches!(&deserialized[0], OpCode::Expr(_, Register::A1)));
+    assert!(matches!(&deserialized[0], OpCode::Expr(_, Operand::Register(Register::A1))));
 }
 
 #[test]
 fn expr_with_unary_roundtrip() {
     let ops = vec![OpCode::Expr(
-        Expr::Unary(UnOp::Neg, Box::new(Expr::Literal(Value::I32(5)))),
-        Register::A2,
+        Expr::Unary(UnOp::Neg, Box::new(Expr::Operand(Operand::Literal(Value::I32(5))))),
+        Operand::Register(Register::A2),
     )];
     let bytes = bincode::serialize(&ops).unwrap();
     let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
     assert_eq!(deserialized.len(), 1);
-    assert!(matches!(&deserialized[0], OpCode::Expr(_, Register::A2)));
+    assert!(matches!(&deserialized[0], OpCode::Expr(_, Operand::Register(Register::A2))));
 }
 
 #[test]
 fn expr_with_register_roundtrip() {
     let ops = vec![OpCode::Expr(
         Expr::Binary(
-            Box::new(Expr::Register(Register::A1)),
+            Box::new(Expr::Operand(Operand::Register(Register::A1))),
             BinOp::Add,
-            Box::new(Expr::Literal(Value::U8(3))),
+            Box::new(Expr::Operand(Operand::Literal(Value::U8(3)))),
         ),
-        Register::A3,
+        Operand::Register(Register::A3),
     )];
     let bytes = bincode::serialize(&ops).unwrap();
     let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
     assert_eq!(deserialized.len(), 1);
-    assert!(matches!(&deserialized[0], OpCode::Expr(_, Register::A3)));
+    assert!(matches!(&deserialized[0], OpCode::Expr(_, Operand::Register(Register::A3))));
 }
 
 #[test]
 fn nested_expr_roundtrip() {
     let ops = vec![OpCode::Block(vec![
         OpCode::Expr(
-            Expr::Literal(Value::U8(10)),
-            Register::A1,
+            Expr::Operand(Operand::Literal(Value::U8(10))),
+            Operand::Register(Register::A1),
         ),
         OpCode::Expr(
             Expr::Binary(
-                Box::new(Expr::Register(Register::A1)),
+                Box::new(Expr::Operand(Operand::Register(Register::A1))),
                 BinOp::Mul,
-                Box::new(Expr::Literal(Value::U8(2))),
+                Box::new(Expr::Operand(Operand::Literal(Value::U8(2)))),
             ),
-            Register::A2,
+            Operand::Register(Register::A2),
         ),
     ])];
     let bytes = bincode::serialize(&ops).unwrap();
@@ -417,7 +417,9 @@ fn nested_expr_roundtrip() {
 fn run(source: &str) -> Registers {
     let ops = reader::parse(source).unwrap();
     let mut regs = Registers::new();
-    ralr::runner::runner(&ops, &mut regs).unwrap();
+    let mut variables: ahash::AHashMap<String, vm_isa::variable::Variable> = ahash::AHashMap::new();
+    let mut functions: ahash::AHashMap<String, vm_isa::function::FnDef> = ahash::AHashMap::new();
+    ralr::runner::runner(&ops, &mut regs, &mut variables, &mut functions).unwrap();
     regs
 }
 
@@ -519,7 +521,7 @@ fn eval_mixed_old_and_new() {
 fn parse_string_with_newline_escape() {
     let ops = reader::parse(r#"$a1 = "a\nb";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\nb"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\nb"),
         _ => panic!("expected string literal"),
     }
 }
@@ -528,7 +530,7 @@ fn parse_string_with_newline_escape() {
 fn parse_string_with_tab_escape() {
     let ops = reader::parse(r#"$a1 = "a\tb";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\tb"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\tb"),
         _ => panic!("expected string literal"),
     }
 }
@@ -537,7 +539,7 @@ fn parse_string_with_tab_escape() {
 fn parse_string_with_carriage_return_escape() {
     let ops = reader::parse(r#"$a1 = "a\rb";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\rb"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\rb"),
         _ => panic!("expected string literal"),
     }
 }
@@ -546,7 +548,7 @@ fn parse_string_with_carriage_return_escape() {
 fn parse_string_with_backslash_escape() {
     let ops = reader::parse(r#"$a1 = "a\\b";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\\b"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\\b"),
         _ => panic!("expected string literal"),
     }
 }
@@ -555,7 +557,7 @@ fn parse_string_with_backslash_escape() {
 fn parse_string_with_double_quote_escape() {
     let ops = reader::parse(r#"$a1 = "a\"b";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\"b"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\"b"),
         _ => panic!("expected string literal"),
     }
 }
@@ -564,7 +566,7 @@ fn parse_string_with_double_quote_escape() {
 fn parse_string_with_single_quote_escape() {
     let ops = reader::parse(r#"$a1 = "a\'b";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a'b"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a'b"),
         _ => panic!("expected string literal"),
     }
 }
@@ -573,7 +575,7 @@ fn parse_string_with_single_quote_escape() {
 fn parse_string_with_bell_escape() {
     let ops = reader::parse(r#"$a1 = "a\ab";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\x07b"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\x07b"),
         _ => panic!("expected string literal"),
     }
 }
@@ -582,7 +584,7 @@ fn parse_string_with_bell_escape() {
 fn parse_string_with_backspace_escape() {
     let ops = reader::parse(r#"$a1 = "a\bb";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\x08b"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\x08b"),
         _ => panic!("expected string literal"),
     }
 }
@@ -591,7 +593,7 @@ fn parse_string_with_backspace_escape() {
 fn parse_string_with_form_feed_escape() {
     let ops = reader::parse(r#"$a1 = "a\fb";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\x0Cb"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\x0Cb"),
         _ => panic!("expected string literal"),
     }
 }
@@ -600,7 +602,7 @@ fn parse_string_with_form_feed_escape() {
 fn parse_string_with_vertical_tab_escape() {
     let ops = reader::parse(r#"$a1 = "a\vb";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\x0Bb"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\x0Bb"),
         _ => panic!("expected string literal"),
     }
 }
@@ -609,7 +611,7 @@ fn parse_string_with_vertical_tab_escape() {
 fn parse_string_with_escape_char_escape() {
     let ops = reader::parse(r#"$a1 = "a\eb";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\x1Bb"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\x1Bb"),
         _ => panic!("expected string literal"),
     }
 }
@@ -618,7 +620,7 @@ fn parse_string_with_escape_char_escape() {
 fn parse_string_with_null_escape() {
     let ops = reader::parse(r#"$a1 = "a\0b";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => assert_eq!(s, "a\0b"),
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => assert_eq!(s, "a\0b"),
         _ => panic!("expected string literal"),
     }
 }
@@ -627,7 +629,7 @@ fn parse_string_with_null_escape() {
 fn parse_string_with_multiple_escapes() {
     let ops = reader::parse(r#"$a1 = "\t\r\n\0\x41\u{4e2d}";"#).unwrap();
     match &ops[0] {
-        OpCode::Expr(Expr::Literal(Value::String(s)), _) => {
+        OpCode::Expr(Expr::Operand(Operand::Literal(Value::String(s))), _) => {
             assert_eq!(s, "\t\r\n\0\x41\u{4e2d}");
         }
         _ => panic!("expected string literal"),
@@ -808,14 +810,14 @@ fn eval_if_non_bool_condition_panics() {
 #[test]
 fn if_else_roundtrip() {
     let ops = vec![OpCode::If(
-        Expr::Literal(Value::Bool(true)),
+        Expr::Operand(Operand::Literal(Value::Bool(true))),
         vec![OpCode::Expr(
-            Expr::Literal(Value::U8(1)),
-            Register::A1,
+            Expr::Operand(Operand::Literal(Value::U8(1))),
+            Operand::Register(Register::A1),
         )],
         Some(vec![OpCode::Expr(
-            Expr::Literal(Value::U8(2)),
-            Register::A1,
+            Expr::Operand(Operand::Literal(Value::U8(2))),
+            Operand::Register(Register::A1),
         )]),
     )];
     let bytes = bincode::serialize(&ops).unwrap();
@@ -823,7 +825,7 @@ fn if_else_roundtrip() {
     assert_eq!(deserialized.len(), 1);
     match &deserialized[0] {
         OpCode::If(cond, then, else_b) => {
-            assert_eq!(cond, &Expr::Literal(Value::Bool(true)));
+            assert_eq!(cond, &Expr::Operand(Operand::Literal(Value::Bool(true))));
             assert_eq!(then.len(), 1);
             assert!(else_b.is_some());
         }
@@ -834,7 +836,7 @@ fn if_else_roundtrip() {
 #[test]
 fn if_without_else_roundtrip() {
     let ops = vec![OpCode::If(
-        Expr::Literal(Value::Bool(false)),
+        Expr::Operand(Operand::Literal(Value::Bool(false))),
         vec![],
         None,
     )];
@@ -1003,4 +1005,525 @@ fn io_writeln_executes_without_panic() {
 fn io_write_with_register_value() {
     let regs = run("$a1 = 100; io write $a1;");
     assert_eq!(regs.read(Register::A1), &Value::U8(100));
+}
+
+// ── Variable tests ───────────────────────────────────────────────────
+// 中文：变量测试
+// Русский: Тесты переменных
+
+/// Helper: parse source, execute against fresh registers and variable hashmap,
+/// return the variable hashmap.
+/// 中文：辅助函数：解析源代码，在全新寄存器和变量哈希表上执行，返回变量哈希表。
+fn run_with_vars(source: &str) -> (Registers, ahash::AHashMap<String, vm_isa::variable::Variable>) {
+    let ops = reader::parse(source).unwrap();
+    let mut regs = Registers::new();
+    let mut variables: ahash::AHashMap<String, vm_isa::variable::Variable> = ahash::AHashMap::new();
+    let mut functions: ahash::AHashMap<String, vm_isa::function::FnDef> = ahash::AHashMap::new();
+    ralr::runner::runner(&ops, &mut regs, &mut variables, &mut functions).unwrap();
+    (regs, variables)
+}
+
+#[test]
+fn parse_let_immutable_variable() {
+    let ops = reader::parse("let x = 42;").unwrap();
+    assert_eq!(ops.len(), 2);
+    // First opcode: Expr writing to SystemVarBuffer
+    assert!(matches!(&ops[0], OpCode::Expr(_, Operand::Register(Register::SystemVarBuffer))));
+    // Second opcode: Variable declaration with is_mut = false
+    match &ops[1] {
+        OpCode::Variable(name, var) => {
+            assert_eq!(name, "x");
+            assert!(!var.is_mut);
+        }
+        other => panic!("expected Variable, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_let_mut_mutable_variable() {
+    let ops = reader::parse("let mut y = 10;").unwrap();
+    assert_eq!(ops.len(), 2);
+    assert!(matches!(&ops[0], OpCode::Expr(_, Operand::Register(Register::SystemVarBuffer))));
+    match &ops[1] {
+        OpCode::Variable(name, var) => {
+            assert_eq!(name, "y");
+            assert!(var.is_mut);
+        }
+        other => panic!("expected Variable, got {other:?}"),
+    }
+}
+
+#[test]
+fn eval_let_variable() {
+    let (_, vars) = run_with_vars("let x = 100;");
+    let var = vars.get("x").expect("variable x should exist");
+    assert_eq!(var.value, Value::U8(100));
+    assert!(!var.is_mut);
+}
+
+#[test]
+fn eval_let_mut_variable() {
+    let (_, vars) = run_with_vars("let mut y = 200;");
+    let var = vars.get("y").expect("variable y should exist");
+    assert_eq!(var.value, Value::U8(200));
+    assert!(var.is_mut);
+}
+
+#[test]
+fn eval_variable_mutation() {
+    let (_, vars) = run_with_vars("let mut count = 0; count = count + 1;");
+    let var = vars.get("count").expect("variable count should exist");
+    assert_eq!(var.value, Value::U8(1));
+}
+
+#[test]
+fn eval_variable_in_expression() {
+    let (regs, _) = run_with_vars("let a = 10; let b = 20; $a1 = a + b;");
+    assert_eq!(regs.read(Register::A1), &Value::U8(30));
+}
+
+#[test]
+#[should_panic(expected = "cannot assign to immutable variable")]
+fn immutable_variable_assignment_panics() {
+    run_with_vars("let x = 1; x = 2;");
+}
+
+#[test]
+#[should_panic(expected = "Cannot find the variable")]
+fn undefined_variable_in_expression_panics() {
+    run_with_vars("$a1 = undefined_var;");
+}
+
+#[test]
+fn variable_bincode_roundtrip() {
+    use vm_isa::variable::Variable;
+    let ops = vec![
+        OpCode::Expr(
+            Expr::Operand(Operand::Literal(Value::U8(42))),
+            Operand::Register(Register::SystemVarBuffer),
+        ),
+        OpCode::Variable("myvar".into(), Variable {
+            is_mut: false,
+            value: Value::None,
+        }),
+    ];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    assert_eq!(deserialized.len(), 2);
+    assert!(matches!(&deserialized[0], OpCode::Expr(_, Operand::Register(Register::SystemVarBuffer))));
+    match &deserialized[1] {
+        OpCode::Variable(name, var) => {
+            assert_eq!(name, "myvar");
+            assert!(!var.is_mut);
+        }
+        other => panic!("expected Variable, got {other:?}"),
+    }
+}
+
+#[test]
+fn let_missing_equals_errors() {
+    let result = reader::parse("let x 42;");
+    assert!(result.is_err());
+}
+
+#[test]
+fn let_missing_expression_errors() {
+    let result = reader::parse("let x =;");
+    assert!(result.is_err());
+}
+
+#[test]
+fn let_missing_variable_name_errors() {
+    let result = reader::parse("let = 42;");
+    assert!(result.is_err());
+}
+
+// ── While loop tests ──────────────────────────────────────────────────
+// 中文：While 循环测试
+// Русский: Тесты циклов while
+
+#[test]
+fn parse_while_loop() {
+    let ops = reader::parse("while true { $a1 = 1; }").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::While(cond, body) => {
+            assert_eq!(cond, &Expr::Operand(Operand::Literal(Value::Bool(true))));
+            assert_eq!(body.len(), 1);
+        }
+        other => panic!("expected While, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_while_with_expression_condition() {
+    let ops = reader::parse("while $a1 < 10 { $a1 = $a1 + 1; }").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::While(cond, _) => {
+            assert!(matches!(cond, Expr::Binary(_, BinOp::Lt, _)));
+        }
+        other => panic!("expected While, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_while_requires_brace() {
+    let result = reader::parse("while true $a1 = 1;");
+    assert!(result.is_err());
+}
+
+#[test]
+fn parse_while_requires_condition() {
+    let result = reader::parse("while { }");
+    assert!(result.is_err());
+}
+
+#[test]
+fn eval_while_variable_counter() {
+    // A while loop that increments a mutable variable from 0 to 5.
+    // 中文：一个 while 循环，将可变变量从 0 递增到 5。
+    let (_, vars) = run_with_vars(
+        "let mut i = 0; while i < 5 { i = i + 1; }",
+    );
+    let var = vars.get("i").expect("variable i should exist");
+    assert_eq!(var.value, Value::U8(5));
+}
+
+#[test]
+fn while_bincode_roundtrip() {
+    let ops = vec![OpCode::While(
+        Expr::Operand(Operand::Literal(Value::Bool(true))),
+        vec![OpCode::Add(
+            Operand::Literal(Value::U8(1)),
+            Operand::Literal(Value::U8(1)),
+            Register::A1,
+        )],
+    )];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    assert_eq!(deserialized.len(), 1);
+    match &deserialized[0] {
+        OpCode::While(_, body) => assert_eq!(body.len(), 1),
+        other => panic!("expected While, got {other:?}"),
+    }
+}
+
+#[test]
+fn while_with_variable_condition() {
+    // While loop using a variable in the condition expression.
+    // 中文：在条件表达式中使用变量的 while 循环。
+    let (regs, _) = run_with_vars(
+        "let cond = true; $a1 = 0; while cond { $a1 = 1; let cond = false; }",
+    );
+    // The loop body executes once because cond starts as true,
+    // then becomes false so the loop exits on the next iteration.
+    assert_eq!(regs.read(Register::A1), &Value::U8(1));
+}
+
+#[test]
+#[should_panic(expected = "Bool")]
+fn while_non_bool_condition_panics() {
+    run_with_vars("while 42 { }");
+}
+
+#[test]
+fn io_writeln_with_variable() {
+    // io writeln should resolve variable references via the hashmap.
+    // 中文：io writeln 应通过哈希表解析变量引用。
+    let (_, vars) = run_with_vars("let msg = 99; io writeln msg;");
+    let var = vars.get("msg").expect("variable msg should exist");
+    assert_eq!(var.value, Value::U8(99));
+}
+
+// ── Function tests ────────────────────────────────────────────────────
+// 中文：函数测试
+// Русский: Тесты функций
+
+#[test]
+fn parse_fn_definition() {
+    let ops = reader::parse("fn add(a, b) { return a + b; }").unwrap();
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        OpCode::FnDef { name, params, body } => {
+            assert_eq!(name, "add");
+            assert_eq!(params, &["a", "b"]);
+            assert!(!body.is_empty());
+        }
+        other => panic!("expected FnDef, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_fn_no_params() {
+    let ops = reader::parse("fn answer() { return 42; }").unwrap();
+    match &ops[0] {
+        OpCode::FnDef { name, params, body } => {
+            assert_eq!(name, "answer");
+            assert!(params.is_empty());
+            assert_eq!(body.len(), 1); // Return
+        }
+        other => panic!("expected FnDef, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_fn_multiple_params() {
+    let ops = reader::parse("fn sum(a, b, c, d) { return a + b + c + d; }").unwrap();
+    match &ops[0] {
+        OpCode::FnDef { params, .. } => {
+            assert_eq!(params, &["a", "b", "c", "d"]);
+        }
+        other => panic!("expected FnDef, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_call_standalone() {
+    let ops = reader::parse("fn f() { return 1; } call f();").unwrap();
+    assert_eq!(ops.len(), 2);
+    assert!(matches!(&ops[0], OpCode::FnDef { .. }));
+    assert!(matches!(&ops[1], OpCode::Call { .. }));
+}
+
+#[test]
+fn parse_call_with_assign() {
+    let ops = reader::parse("fn f() { return 1; } $a1 = call f();").unwrap();
+    match &ops[1] {
+        OpCode::Call { name, dest, .. } => {
+            assert_eq!(name, "f");
+            assert_eq!(dest, &Operand::Register(Register::A1));
+        }
+        other => panic!("expected Call, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_call_with_args() {
+    let ops = reader::parse("fn add(a, b) { return a + b; } $a1 = call add(1, 2);").unwrap();
+    match &ops[1] {
+        OpCode::Call { name, args, .. } => {
+            assert_eq!(name, "add");
+            assert_eq!(args.len(), 2);
+        }
+        other => panic!("expected Call, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_return_expr() {
+    let ops = reader::parse("fn f() { return 1 + 2; }").unwrap();
+    match &ops[0] {
+        OpCode::FnDef { body, .. } => {
+            assert!(matches!(&body[0], OpCode::Return(_)));
+        }
+        other => panic!("expected FnDef, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_return_empty() {
+    let ops = reader::parse("fn f() { return; }").unwrap();
+    match &ops[0] {
+        OpCode::FnDef { body, .. } => {
+            assert!(matches!(&body[0], OpCode::Return(_)));
+        }
+        other => panic!("expected FnDef, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_return_call() {
+    let ops = reader::parse("fn f() { fn g() { return 1; } return call g(); }").unwrap();
+    match &ops[0] {
+        OpCode::FnDef { body, .. } => {
+            assert_eq!(body.len(), 2); // FnDef for g, Call for g
+        }
+        other => panic!("expected FnDef, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_let_with_call() {
+    let ops = reader::parse("fn f() { return 1; } let x = call f();").unwrap();
+    // FnDef, Call, Variable
+    assert_eq!(ops.len(), 3);
+    assert!(matches!(&ops[0], OpCode::FnDef { .. }));
+    assert!(matches!(&ops[1], OpCode::Call { .. }));
+    assert!(matches!(&ops[2], OpCode::Variable(..)));
+}
+
+/// Helper: parse source with functions, execute, return registers and vars.
+/// 中文：辅助函数：解析带函数的源代码，执行，返回寄存器和变量。
+fn run_with_fns(
+    source: &str,
+) -> (
+    Registers,
+    ahash::AHashMap<String, vm_isa::variable::Variable>,
+) {
+    let ops = reader::parse(source).unwrap();
+    let mut regs = Registers::new();
+    let mut variables: ahash::AHashMap<String, vm_isa::variable::Variable> = ahash::AHashMap::new();
+    let mut functions: ahash::AHashMap<String, vm_isa::function::FnDef> = ahash::AHashMap::new();
+    ralr::runner::runner(&ops, &mut regs, &mut variables, &mut functions).unwrap();
+    (regs, variables)
+}
+
+#[test]
+fn eval_simple_fn_call() {
+    let (regs, _) = run_with_fns("fn add(a, b) { return a + b; } $a1 = call add(5, 7);");
+    assert_eq!(regs.read(Register::A1), &Value::U8(12));
+}
+
+#[test]
+fn eval_fn_call_no_args() {
+    let (regs, _) = run_with_fns("fn answer() { return 42; } $a1 = call answer();");
+    assert_eq!(regs.read(Register::A1), &Value::U8(42));
+}
+
+#[test]
+fn eval_fn_call_with_variable_arg() {
+    let (regs, _) = run_with_fns(
+        "fn double(n) { return n + n; } let x = 5; $a1 = call double(x);",
+    );
+    assert_eq!(regs.read(Register::A1), &Value::U8(10));
+}
+
+#[test]
+fn eval_fn_calling_fn() {
+    let (regs, _) = run_with_fns(
+        "fn double(n) { return n + n; } fn quadruple(n) { let d = call double(n); return call double(d); } $a1 = call quadruple(3);",
+    );
+    assert_eq!(regs.read(Register::A1), &Value::U8(12));
+}
+
+#[test]
+fn eval_fn_using_outer_variable() {
+    // Functions close over outer-scope variables.
+    // 中文：函数闭包引用外部作用域的变量。
+    let (regs, _) = run_with_fns(
+        "let factor = 3; fn scale(n) { return n * factor; } $a1 = call scale(4);",
+    );
+    assert_eq!(regs.read(Register::A1), &Value::U8(12));
+}
+
+#[test]
+fn eval_fn_with_if() {
+    let (regs, _) = run_with_fns(
+        "fn max(a, b) { if a > b { return a; } return b; } $a1 = call max(3, 7);",
+    );
+    assert_eq!(regs.read(Register::A1), &Value::U8(7));
+}
+
+#[test]
+fn eval_fn_param_shadowing() {
+    // Parameter names shadow outer variables of the same name.
+    // 中文：参数名遮蔽同名的外部变量。
+    let (regs, _) = run_with_fns(
+        "let x = 100; fn f(x) { return x + 1; } $a1 = call f(5);",
+    );
+    // Inside f, x = 5 (the argument), not 100 (the outer variable).
+    assert_eq!(regs.read(Register::A1), &Value::U8(6));
+}
+
+#[test]
+fn eval_fn_standalone_call() {
+    // Call without explicit dest — result goes to SystemVarBuffer,
+    // then can be used via let/register.
+    // 中文：无显式目标的调用 — 结果存入 SystemVarBuffer。
+    let (regs, _) = run_with_fns(
+        "fn answer() { return 42; } call answer(); let x = call answer(); $a1 = x;",
+    );
+    assert_eq!(regs.read(Register::A1), &Value::U8(42));
+}
+
+#[test]
+#[should_panic(expected = "function not found")]
+fn call_undefined_fn_panics() {
+    run_with_fns("$a1 = call missing(1, 2);");
+}
+
+#[test]
+#[should_panic(expected = "expects 2 arguments, got 1")]
+fn call_wrong_arg_count_panics() {
+    run_with_fns("fn f(a, b) { return a + b; } $a1 = call f(1);");
+}
+
+#[test]
+fn fn_bincode_roundtrip() {
+    let ops = vec![OpCode::FnDef {
+        name: "add".into(),
+        params: vec!["a".into(), "b".into()],
+        body: vec![OpCode::Return(Expr::Binary(
+            Box::new(Expr::Operand(Operand::Variable("a".into(), vm_isa::variable::Variable { is_mut: false, value: Value::None }))),
+            BinOp::Add,
+            Box::new(Expr::Operand(Operand::Variable("b".into(), vm_isa::variable::Variable { is_mut: false, value: Value::None }))),
+        ))],
+    }];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    assert_eq!(deserialized.len(), 1);
+    match &deserialized[0] {
+        OpCode::FnDef { name, params, .. } => {
+            assert_eq!(name, "add");
+            assert_eq!(params, &["a", "b"]);
+        }
+        other => panic!("expected FnDef, got {other:?}"),
+    }
+}
+
+#[test]
+fn call_bincode_roundtrip() {
+    let ops = vec![OpCode::Call {
+        name: "f".into(),
+        args: vec![Expr::Operand(Operand::Literal(Value::U8(1)))],
+        dest: Operand::Register(Register::A1),
+    }];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    match &deserialized[0] {
+        OpCode::Call { name, args, dest } => {
+            assert_eq!(name, "f");
+            assert_eq!(args.len(), 1);
+            assert_eq!(dest, &Operand::Register(Register::A1));
+        }
+        other => panic!("expected Call, got {other:?}"),
+    }
+}
+
+#[test]
+fn return_bincode_roundtrip() {
+    let ops = vec![OpCode::Return(Expr::Operand(Operand::Literal(
+        Value::U8(42),
+    )))];
+    let bytes = bincode::serialize(&ops).unwrap();
+    let deserialized: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
+    match &deserialized[0] {
+        OpCode::Return(_) => {}
+        other => panic!("expected Return, got {other:?}"),
+    }
+}
+
+#[test]
+fn fn_missing_name_errors() {
+    let result = reader::parse("fn () { return 1; }");
+    assert!(result.is_err());
+}
+
+#[test]
+fn fn_missing_paren_errors() {
+    let result = reader::parse("fn f { return 1; }");
+    assert!(result.is_err());
+}
+
+#[test]
+fn fn_missing_brace_errors() {
+    let result = reader::parse("fn f() return 1;");
+    assert!(result.is_err());
+}
+
+#[test]
+fn call_missing_paren_errors() {
+    let result = reader::parse("call f;");
+    assert!(result.is_err());
 }

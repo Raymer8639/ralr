@@ -1,0 +1,31 @@
+// Variable declaration and mutation demo
+// 中文：变量声明和可变性演示
+let x = 42;
+io writeln x;
+
+let mut y = 10;
+io writeln y;
+
+// Read immutable variable in expressions
+// 中文：在表达式中读取不可变变量
+let z = x + y;
+io writeln z;
+
+// Mutate the mutable variable
+// 中文：修改可变变量
+y = y + 1;
+io writeln y;
+
+// Variables work with control flow
+// 中文：变量与控制流配合使用
+if y > 10 {
+    io writeln "y is greater than 10";
+}
+
+// While loop with mutable variable
+// 中文：使用可变变量的 while 循环
+let mut count = 0;
+while count < 3 {
+    io writeln count;
+    count = count + 1;
+}

@@ -9,9 +9,10 @@
 use anyhow::{Result, anyhow};
 use std::char;
 use vm_isa::{
-    op_code::{IoOp, OpCode, Operand},
+    op_code::{Expr, IoOp, OpCode, Operand},
     register::Register,
     value::Value,
+    variable::Variable,
 };
 
 use crate::expr_parser::parse_expr_str;
@@ -142,9 +143,27 @@ pub(crate) fn to_register(str: &str) -> Result<Register> {
 /// 中文：如果标记以 `$` 开头，则分派到 [`Operand::Register`]，否则分派到 [`Operand::Literal`]。
 fn to_operand(str: &str) -> Result<Operand> {
     if str.starts_with('$') {
+        // Register reference: $a1–$a5
+        // 中文：寄存器引用：$a1–$a5
         Ok(Operand::Register(to_register(str)?))
-    } else {
+    } else if str.starts_with('"') {
+        // Quoted string literal — must parse as a valid value.
+        // 中文：带引号的字符串字面量 — 必须解析为有效值。
         Ok(Operand::Literal(to_value(str)?))
+    } else {
+        // Bare word — try literal (number, bool) first,
+        // fall back to named variable reference.
+        // 中文：裸词 — 首先尝试字面量（数字、布尔值），回退到命名变量引用。
+        match to_value(str) {
+            Ok(v) => Ok(Operand::Literal(v)),
+            Err(_) => Ok(Operand::Variable(
+                str.to_string(),
+                Variable {
+                    is_mut: false,
+                    value: Value::None,
+                },
+            )),
+        }
     }
 }
 
@@ -192,6 +211,59 @@ fn tokenize(s: &str) -> Vec<&str> {
         }
     }
     tokens
+}
+
+/// Parses a function call string and pushes the corresponding
+/// [`OpCode::Call`] onto `cmds`.
+/// 中文：解析函数调用字符串并将对应的 [`OpCode::Call`] 推送到 `cmds`。
+///
+/// The `text` must start with `call` followed by the function name and
+/// parenthesised argument list, e.g. `call add(1, 2)`.
+/// 中文：`text` 必须以 `call` 开头，后跟函数名和带括号的参数列表，例如 `call add(1, 2)`。
+fn push_call_opcode(text: &str, dest: Operand, cmds: &mut Vec<OpCode>) -> Result<()> {
+    let rest = text[4..].trim_start(); // after "call"
+    let paren_pos = rest
+        .find('(')
+        .ok_or(anyhow!("expected '(' in function call"))?;
+    let fn_name = rest[..paren_pos].trim().to_string();
+    if fn_name.is_empty() {
+        return Err(anyhow!("expected function name before '('"));
+    }
+    let after_paren = &rest[paren_pos + 1..];
+    let close_paren = after_paren
+        .rfind(')')
+        .ok_or(anyhow!("expected ')' in function call"))?;
+    let args_str = after_paren[..close_paren].trim();
+    // Parse comma-separated argument expressions.
+    // 中文：解析逗号分隔的参数表达式。
+    let args: Vec<Expr> = if args_str.is_empty() {
+        vec![]
+    } else {
+        // Split on top-level commas only (not inside nested parens).
+        // 中文：仅按顶层逗号拆分（不在嵌套括号内拆分）。
+        let mut arg_exprs = vec![];
+        let mut depth = 0u32;
+        let mut start = 0usize;
+        for (i, ch) in args_str.char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                ',' if depth == 0 => {
+                    arg_exprs.push(parse_expr_str(args_str[start..i].trim())?);
+                    start = i + 1;
+                }
+                _ => {}
+            }
+        }
+        arg_exprs.push(parse_expr_str(args_str[start..].trim())?);
+        arg_exprs
+    };
+    cmds.push(OpCode::Call {
+        name: fn_name,
+        args,
+        dest,
+    });
+    Ok(())
 }
 
 /// Parses a single instruction string (already trimmed, no surrounding
@@ -290,8 +362,86 @@ fn parse_instruction(cmd: &str, cmds: &mut Vec<OpCode>) -> Result<()> {
                 other => return Err(anyhow!("unknown io sub-command: {other}")),
             }
         }
-        _ if cmd_vecs.len() >= 3 && cmd_vecs[0].starts_with('$') && cmd_vecs[1] == "=" => {
-            let dest = to_register(cmd_vecs[0])?;
+        "let" => {
+            // Parse `let [mut] name = expr;`
+            // Use the original command string for the expression part so that
+            // multi-token expressions like `1 + 2` are preserved in full.
+            // 中文：使用原始命令字符串作为表达式部分，以便像 `1 + 2` 这样的多标记表达式被完整保留。
+            let rest = cmd[3..].trim_start(); // after "let"
+            // 中文："let" 之后的部分
+            let mutable = rest.starts_with("mut")
+                && (rest.len() == 3 || rest.as_bytes()[3].is_ascii_whitespace());
+            let after_kw = if mutable {
+                rest[3..].trim_start() // skip "mut"
+            // 中文：跳过 "mut"
+            } else {
+                rest
+            };
+            let eq_pos = after_kw
+                .find('=')
+                .ok_or(anyhow!("expected '=' in let statement"))?;
+            // 中文：let 语句中应有 '='
+            let var_name = after_kw[..eq_pos].trim().to_string();
+            if var_name.is_empty() {
+                return Err(anyhow!("expected variable name in let statement"));
+            }
+            let expr_str = after_kw[eq_pos + 1..].trim();
+            if expr_str.is_empty() {
+                return Err(anyhow!("expected expression after '=' in let statement"));
+            }
+            // If the expression is a function call, push a Call opcode
+            // instead of an Expr, so the return value lands in
+            // SystemVarBuffer for the Variable opcode to pick up.
+            // 中文：如果表达式是函数调用，则推送 Call 操作码而非 Expr，
+            // 使返回值存入 SystemVarBuffer 供 Variable 操作码获取。
+            if expr_str.starts_with("call ") || expr_str == "call" {
+                push_call_opcode(expr_str, Operand::Register(Register::SystemVarBuffer), cmds)?;
+            } else {
+                let expr = parse_expr_str(expr_str)?;
+                cmds.push(OpCode::Expr(
+                    expr,
+                    Operand::Register(Register::SystemVarBuffer),
+                ));
+            }
+            cmds.push(OpCode::Variable(
+                var_name,
+                Variable {
+                    is_mut: mutable,
+                    value: Value::None,
+                },
+            ));
+        }
+        "call" => {
+            // Function call: call name(arg1, arg2, ...) [$dest]
+            // 中文：函数调用：call 名称(参数1, 参数2, ...) [$dest]
+            let dest = Operand::Register(Register::SystemVarBuffer);
+            push_call_opcode(cmd, dest, cmds)?;
+        }
+        "return" => {
+            // Return from function: return expr; or return;
+            // 中文：从函数返回：return 表达式; 或 return;
+            let expr_str = cmd[6..].trim(); // after "return"
+            if expr_str.is_empty() {
+                cmds.push(OpCode::Return(Expr::Operand(Operand::Literal(Value::None))));
+            } else if expr_str.starts_with("call ") || expr_str == "call" {
+                // Return the result of a function call.
+                // 中文：返回函数调用的结果。
+                push_call_opcode(expr_str, Operand::Register(Register::SystemVarBuffer), cmds)?;
+            } else {
+                let expr = parse_expr_str(expr_str)?;
+                cmds.push(OpCode::Return(expr));
+            }
+        }
+        // Assignment with a function call on the RHS: $reg = call name(args)
+        // 中文：右侧有函数调用的赋值：$reg = call 名称(参数)
+        _ if cmd_vecs.len() >= 4 && cmd_vecs[1] == "=" && cmd_vecs[2] == "call" => {
+            let dest = to_operand(cmd_vecs[0])?;
+            let eq_pos = cmd.find('=').unwrap();
+            let call_text = cmd[eq_pos + 1..].trim();
+            push_call_opcode(call_text, dest, cmds)?;
+        }
+        _ if cmd_vecs.len() >= 3 && cmd_vecs[1] == "=" => {
+            let dest = to_operand(cmd_vecs[0])?;
             // Re-tokenize the raw expression text with operator-aware splitting.
             let eq_pos = cmd.find('=').unwrap();
             let expr_str = cmd[eq_pos + 1..].trim();
@@ -482,6 +632,61 @@ fn parse_block(source: &str, pos: &mut usize, cmds: &mut Vec<OpCode>) -> Result<
                         *pos += 1;
                     }
                     continue;
+                }
+                if text.starts_with("fn ") || text == "fn" {
+                    // `fn name(params) { ... }`
+                    // 中文：`fn 名称(参数) { ... }`
+                    let rest = if text.len() > 2 {
+                        text[2..].trim()
+                    } else {
+                        return Err(anyhow!("fn requires a name"));
+                    };
+                    let paren_pos = rest
+                        .find('(')
+                        .ok_or(anyhow!("expected '(' after function name"))?;
+                    let fn_name = rest[..paren_pos].trim().to_string();
+                    if fn_name.is_empty() {
+                        return Err(anyhow!("expected function name before '('"));
+                    }
+                    let after_paren = &rest[paren_pos + 1..];
+                    let close_paren = after_paren
+                        .find(')')
+                        .ok_or(anyhow!("expected ')' after parameters"))?;
+                    let params_str = after_paren[..close_paren].trim();
+                    let params: Vec<String> = if params_str.is_empty() {
+                        vec![]
+                    } else {
+                        params_str
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    };
+                    // Consume `{` for the function body.
+                    while *pos < len && bytes[*pos].is_ascii_whitespace() {
+                        *pos += 1;
+                    }
+                    // The text accumulator stopped at `{` because `{` is a boundary.
+                    // Advance past the `{`.
+                    if *pos < len && bytes[*pos] == b'{' {
+                        *pos += 1;
+                    } else {
+                        return Err(anyhow!("expected '{{' after function parameters"));
+                    }
+                    let mut body = vec![];
+                    parse_block(source, pos, &mut body)?;
+                    cmds.push(OpCode::FnDef {
+                        name: fn_name,
+                        params,
+                        body,
+                    });
+                    // Consume optional trailing `;` after the `}`.
+                    while *pos < len && bytes[*pos].is_ascii_whitespace() {
+                        *pos += 1;
+                    }
+                    if *pos < len && bytes[*pos] == b';' {
+                        *pos += 1;
+                    }
                 }
                 if text.starts_with("while ") || text == "while" {
                     // `while` condition { ... }

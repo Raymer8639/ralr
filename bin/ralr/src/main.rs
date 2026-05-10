@@ -2,11 +2,12 @@
 //! and hands them off to the synchronous runner.
 //! 中文：虚拟机入口点。读取 `.abin` 文件，反序列化指令，并将其传递给同步执行器。
 
+use ahash::AHashMap;
 use anyhow::Result;
 use clap::Parser;
 use std::fs;
 use tracing::{Level, info, span};
-use vm_isa::{op_code::OpCode, register::Registers};
+use vm_isa::{op_code::OpCode, register::Registers, variable::Variable};
 
 use ralr::runner;
 
@@ -26,6 +27,8 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let mut registers = Registers::new();
+    let mut variables: AHashMap<String, Variable> = AHashMap::new();
+    let mut functions: AHashMap<String, vm_isa::function::FnDef> = AHashMap::new();
 
     // Read the binary file and deserialize into opcodes.
     // 中文：读取二进制文件并反序列化为操作码。
@@ -40,6 +43,6 @@ fn main() -> Result<()> {
     }?;
     // Execute instructions against a fresh register file.
     // 中文：在全新的寄存器文件上执行指令。
-    runner::runner(&op_code, &mut registers)?;
+    runner::runner(&op_code, &mut registers, &mut variables, &mut functions)?;
     Ok(())
 }

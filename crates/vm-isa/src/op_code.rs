@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 pub use crate::expr::{BinOp, Expr, UnOp};
-use crate::{register::Register, value::Value};
+use crate::{register::Register, value::Value, variable::Variable};
 
 /// An operand to an instruction — either an immediate literal value or
 /// a register reference.
@@ -21,6 +21,7 @@ use crate::{register::Register, value::Value};
 pub enum Operand {
     Literal(Value),
     Register(Register),
+    Variable(String, Variable),
 }
 
 /// I/O operation kind.
@@ -51,7 +52,7 @@ pub enum IoOp {
 /// Arithmetic instructions take two source operands and a destination
 /// register. Print instructions take one operand and write it to stdout.
 /// 中文：算术指令接受两个源操作数和一个目标寄存器。打印指令接受一个操作数并将其写入标准输出。
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum OpCode {
     Add(Operand, Operand, Register),
     Sub(Operand, Operand, Register),
@@ -70,7 +71,7 @@ pub enum OpCode {
     /// Evaluates an expression tree and writes the result into the
     /// destination register.
     /// 中文：计算表达式树并将结果写入目标寄存器。
-    Expr(Expr, Register),
+    Expr(Expr, Operand),
     /// Conditional branch. Evaluates the expression; if `Bool(true)`,
     /// executes the then-body. If `Bool(false)`, executes the optional
     /// else-body. Panics on non-Bool conditions.
@@ -83,4 +84,27 @@ pub enum OpCode {
     /// and this process repeats until the result becomes `Bool(false)`, at which point it terminates.
     /// 中文： 循环语句，计算表达式；若`Bool(true)`则执行一次本体，一直重复，直到`Bool(false)`时停止
     While(Expr, Vec<OpCode>),
+    /// 中文： 变量的声明语句
+    Variable(String, Variable),
+    /// Function definition. Registered in the function table at runtime;
+    /// the body is not executed inline.
+    /// 中文：函数定义。在运行时注册到函数表中；函数体不会内联执行。
+    FnDef {
+        name: String,
+        params: Vec<String>,
+        body: Vec<OpCode>,
+    },
+    /// Function call. Evaluates argument expressions, binds them to
+    /// parameter names, executes the function body, and stores the
+    /// return value in `dest`.
+    /// 中文：函数调用。计算参数表达式，绑定到参数名，执行函数体，将返回值存入 `dest`。
+    Call {
+        name: String,
+        args: Vec<Expr>,
+        dest: Operand,
+    },
+    /// Return from a function. Evaluates the expression and writes the
+    /// result to `SystemVarBuffer` so the caller can retrieve it.
+    /// 中文：从函数返回。计算表达式并将结果写入 `SystemVarBuffer`，以便调用者获取。
+    Return(Expr),
 }

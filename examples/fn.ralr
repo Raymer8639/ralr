@@ -1,0 +1,67 @@
+// Function definition and call demo
+// 中文：函数定义和调用演示
+
+// Simple function with return value
+// 中文：带返回值的简单函数
+fn add(a, b) {
+    return a + b;
+}
+
+// Call the function and capture the result
+// 中文：调用函数并捕获结果
+$a1 = call add(3, 4);
+io writeln $a1;
+
+// Function with multiple parameters
+// 中文：多参数函数
+fn multiply(x, y, z) {
+    return x * y * z;
+}
+
+$a2 = call multiply(2, 3, 4);
+io writeln $a2;
+
+// Function calling another function via intermediate variable
+// 中文：通过中间变量实现函数调用另一个函数
+fn double(n) {
+    return n + n;
+}
+
+fn quadruple(n) {
+    let d = call double(n);
+    return call double(d);
+}
+
+$a3 = call quadruple(10);
+io writeln $a3;
+
+// Function using variables from enclosing scope
+// 中文：函数使用外围作用域的变量
+let factor = 5;
+fn scale(n) {
+    return n * factor;
+}
+
+$a4 = call scale(10);
+io writeln $a4;
+
+// Function with conditional logic
+// 中文：带条件逻辑的函数
+fn max(a, b) {
+    if a > b {
+        return a;
+    }
+    return b;
+}
+
+$a5 = call max(3, 7);
+io writeln $a5;
+
+// No-argument function
+// 中文：无参数函数
+fn answer() {
+    return 42;
+}
+
+$a1 = call answer();
+io writeln $a1;

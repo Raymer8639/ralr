@@ -10,3 +10,4 @@ vm_isa = { path = "../crates/vm-isa" }
 ralr_asm = { path = "../bin/ralr-asm" }
 ralr = { path = "../bin/ralr" }
 bincode = "1.3.3"
+ahash = "0.8.12"

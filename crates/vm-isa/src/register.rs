@@ -22,6 +22,7 @@ pub enum Register {
     A3,
     A4,
     A5,
+    SystemVarBuffer,
 }
 
 impl Register {
@@ -34,6 +35,7 @@ impl Register {
             Register::A3 => 2,
             Register::A4 => 3,
             Register::A5 => 4,
+            Register::SystemVarBuffer => 5,
         }
     }
 }
@@ -46,7 +48,7 @@ impl Register {
 /// 中文：替代了旧的带命名字段的 `AllRegister` 结构体。数组索引提供常量时间查找，无需匹配寄存器变体。
 #[derive(Debug)]
 pub struct Registers {
-    inner: [Value; 5],
+    inner: [Value; 6],
 }
 
 impl Registers {
@@ -55,6 +57,7 @@ impl Registers {
     pub fn new() -> Self {
         Self {
             inner: [
+                Value::None,
                 Value::None,
                 Value::None,
                 Value::None,

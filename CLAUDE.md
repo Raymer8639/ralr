@@ -31,18 +31,20 @@ This is a simple register-based VM with its own assembler. A Cargo workspace wit
 ### `vm_isa` (shared library — `crates/vm-isa/`)
 The instruction set architecture. Defines the core types that both the assembler and VM depend on:
 
-- **`OpCode`** — Arithmetic (`Add`, `Sub`, `Mul`, `Div`) each take `(Operand, Operand, Register)`. I/O via `Println(Operand)` / `Print(Operand)`. Control flow: `Block(Vec<OpCode>)` for nested scopes, `Expr(Expr, Register)` for expression tree evaluation, `If(Expr, Vec<OpCode>, Option<Vec<OpCode>>)` for conditional branching.
-- **`Expr`** (`crates/vm-isa/src/expr.rs`) — Expression AST with `Literal`, `Register`, `Binary`, and `Unary` nodes. 18 binary operators (`BinOp`) and 3 unary operators (`UnOp`) covering arithmetic, comparison, logical, and bitwise operations.
-- **`Operand`** — `Literal(Value)` or `Register(Register)`. Separates immediates from register references at the type level, eliminating the need for `Arc` indirection.
+- **`OpCode`** — Arithmetic (`Add`, `Sub`, `Mul`, `Div`) each take `(Operand, Operand, Register)`. I/O via `IO(IoOp)` with `Write`/`Writeln`/`Read`/`Readln` sub-variants (legacy `Println`/`Print` still exist). Control flow: `Block(Vec<OpCode>)` for nested scopes, `Expr(Expr, Operand)` for expression tree evaluation, `If(Expr, Vec<OpCode>, Option<Vec<OpCode>>)` for conditional branching, `While(Expr, Vec<OpCode>)` for while loops. Variable declarations: `Variable(String, Variable)`. Functions: `FnDef { name, params, body }` for definitions, `Call { name, args, dest }` for calls, `Return(Expr)` for return values.
+- **`Expr`** (`crates/vm-isa/src/expr.rs`) — Expression AST with `Operand(Operand)`, `Binary`, and `Unary` nodes. Leaf nodes (`Operand`) can be literals, register references, or named variable references. 18 binary operators (`BinOp`) and 3 unary operators (`UnOp`) covering arithmetic, comparison, logical, and bitwise operations. `eval_expr()` evaluates against both the register file and a variable hashmap.
+- **`Operand`** — `Literal(Value)`, `Register(Register)`, or `Variable(String, Variable)`. Separates immediates, register references, and named variable references at the type level.
 - **`Value`** — A tagged union of 10 variants: `None`, signed/unsigned ints (`I32`, `I128`, `U8`, `U32`, `U128`), floats (`F32`, `F64`), `Bool`, `String`. Arithmetic is implemented via the `op!` macro that generates type-matching arms.
-- **`Register`** — A `Copy` enum (`A1`–`A5`) with `index()` mapping to `0..4`.
-- **`Registers`** — Runtime register file backed by `[Value; 5]` with O(1) `read`/`write`.
+- **`Variable`** (`crates/vm-isa/src/variable.rs`) — `Variable { is_mut: bool, value: Value }`. Named, mutable-or-immutable value storage that lives in a hashmap parallel to the register file.
+- **`FnDef`** (`crates/vm-isa/src/function.rs`) — `FnDef { params: Vec<String>, body: Vec<OpCode> }`. Stored representation of a user-defined function, registered at definition time and replayed on each call.
+- **`Register`** — A `Copy` enum (`A1`–`A5`, `SystemVarBuffer`) with `index()` mapping to array slots `0..5`. `SystemVarBuffer` is an internal buffer used during variable declaration to transfer expression results into the variable hashmap.
+- **`Registers`** — Runtime register file backed by `[Value; 6]` with O(1) `read`/`write`.
 
-**Key design:** Register resolution happens at the `OpCode` level via `Operand`, not inside `Value`. The VM's `resolve()` function dispatches `Operand::Literal(v)` → clone or `Operand::Register(r)` → array lookup. This eliminates the `Arc<Register>` heap allocation and nested match that existed in the old `Value::Register(Arc<Register>)` design.
+**Key design:** Resolution happens at the `OpCode` level via `Operand`, not inside `Value`. The VM's `resolve()` function dispatches `Operand::Literal(v)` → clone, `Operand::Register(r)` → array lookup, or `Operand::Variable(_, v)` → clone from the variable's current value. Variables live in an `AHashMap<String, Variable>` that is threaded through `runner()` and `eval_expr()`, separate from the fixed-size register file.
 
 **Error behavior:** `Value` arithmetic operators **panic** on type-mismatched operands (e.g., `I32(1) + String("x")` panics) — there is no graceful error propagation at runtime.
 
-All crates use Rust edition 2024. Workspace dependencies: `clap` (CLI), `anyhow` (errors), `bincode` + `serde` (serialization), `tracing` + `tracing-subscriber` (structured logging in `ralr`). String escape processing is handled by `unescape_str()` in `reader.rs` (no external crate needed).
+All crates use Rust edition 2024. Workspace dependencies: `clap` (CLI), `anyhow` (errors), `bincode` + `serde` (serialization), `tracing` + `tracing-subscriber` (structured logging in `ralr`), `ahash` (fast hasher for variable map). String escape processing is handled by `unescape_str()` in `reader.rs` (no external crate needed).
 
 ### `ralr-asm` (assembler — `bin/ralr-asm/`)
 Reads `.ralr` source files and emits `.abin` binary files (default output: `output.abin`).
@@ -53,10 +55,17 @@ Reads `.ralr` source files and emits `.abin` binary files (default output: `outp
 $reg = expression;                 ; e.g. $a1 = (1 + 2) * 3;
 keyword operand1 operand2 $dest;   ; e.g. add 1 2 $a1
 _println|_print value;             ; e.g. _println "hello"
-io write|writeln value;             ; e.g. io writeln "hello"
-io read|readln $reg;                ; e.g. io read $a1
+io write|writeln value;            ; e.g. io writeln "hello"
+io read|readln $reg;               ; e.g. io read $a1
 { instruction; ... }               ; code block (nests, shares register context)
 if cond { ... } [else { ... }]     ; conditional branch (else if desugars to nested If)
+while cond { ... }                 ; while loop (condition must be Bool)
+let name = expr;                   ; immutable variable declaration
+let mut name = expr;               ; mutable variable declaration
+name = expr;                       ; variable assignment (mut only)
+fn name(params) { ... }            ; function definition
+$reg = call name(args);            ; function call with return value capture
+return expr;                       ; return from function
 ```
 
 Each instruction must be terminated with `;`.
@@ -108,6 +117,35 @@ if $a1 > 100 {
 - `if` statements don't require a trailing `;`
 - Blocks share register context with enclosing scope
 
+### While loops (`while`)
+
+```
+while $a1 < 10 {
+    $a1 = $a1 + 1;
+}
+```
+
+- Condition must evaluate to `Bool` (panics otherwise)
+- Body repeats until condition becomes `Bool(false)`
+- Variables declared inside the loop body persist after the loop
+
+### Variables (`let` / `let mut`)
+
+Named, dynamically-allocated values stored in a hashmap parallel to the register file:
+
+```
+let x = 42;
+let mut y = 10;
+y = y + 1;
+io writeln y;
+```
+
+- `let` declares an immutable variable; `let mut` allows reassignment
+- Assignment to an immutable variable is a runtime error (panics)
+- Variables are accessible in expressions by name (e.g., `$a1 = x + y;`)
+- The `=` sign after a non-keyword, non-register token triggers variable/expression assignment parsing
+- Internally: `let x = expr;` evaluates `expr` into `Register::SystemVarBuffer`, then `OpCode::Variable` moves the value into the hashmap
+
 ### I/O operations (`io` keyword)
 
 The `io` keyword unifies all I/O under sub-commands:
@@ -125,7 +163,7 @@ io readln $a2;           // read stdin line, store as String in register
 - The legacy `_print` / `_println` keywords continue to work
 
 - `main.rs` — Parses CLI args (`-o` for output name, multiple input files supported), reads each file fully, passes content to `reader::parse()`.
-- `reader.rs` — `parse()` is the public entry point. It delegates to `parse_block()`, a recursive-descent parser that handles `{ }` blocks, `;`-delimited instructions, `//` and `/* */` comments, and string literals (including boundary characters inside strings). `parse_instruction()` dispatches individual instructions by keyword. Support functions: `to_value()` converts literal tokens (string literals are processed through `unescape_str()` for escape sequences `\n`, `\t`, `\r`, `\\`, `\"`, `\'`, `\a`, `\b`, `\f`, `\v`, `\e`, `\0`, `\xNN`, `\u{NNNN}`; bare words `true`/`false` map to `Bool`; numbers parse via `try_parse!` chain: `u8` → `u32` → `u128` → `i32` → `i128` → `f32` → `f64`). `to_register()` handles `$a1`–`$a5` → `Register::A1`–`A5`. `to_operand()` dispatches: `$`-prefixed tokens → `Operand::Register`, everything else → `Operand::Literal`. `tokenize()` splits on whitespace while keeping quoted strings intact. Unrecognized keywords are silently ignored. Expression assignments (`$a1 = ...`) are detected by matching `$`-prefixed first token with `=` as second token, then delegating to `parse_expr_str()`. The `if` keyword is intercepted at the `parse_block` level: after accumulating instruction text, if it starts with `if`, the condition is parsed via `parse_expr_str()`, then the then-block is consumed, and `parse_else_tail()` handles `else { }` / `else if ...` chains (recursive, with `else if` desugaring to a nested `OpCode::If` in the else-body).
+- `reader.rs` — `parse()` is the public entry point. It delegates to `parse_block()`, a recursive-descent parser that handles `{ }` blocks, `;`-delimited instructions, `//` and `/* */` comments, and string literals (including boundary characters inside strings). `parse_instruction()` dispatches individual instructions by keyword. Support functions: `to_value()` converts literal tokens (string literals are processed through `unescape_str()` for escape sequences `\n`, `\t`, `\r`, `\\`, `\"`, `\'`, `\a`, `\b`, `\f`, `\v`, `\e`, `\0`, `\xNN`, `\u{NNNN}`; bare words `true`/`false` map to `Bool`; numbers parse via `try_parse!` chain: `u8` → `u32` → `u128` → `i32` → `i128` → `f32` → `f64`). `to_register()` handles `$a1`–`$a5` → `Register::A1`–`A5`. `to_operand()` dispatches: `$`-prefixed tokens → `Operand::Register`, unrecognized bare words → `Operand::Variable`, everything else → `Operand::Literal`. `tokenize()` splits on whitespace while keeping quoted strings intact. Unrecognized keywords are silently ignored. Expression assignments (`$a1 = ...`) are detected by matching `$`-prefixed first token with `=` as second token, then delegating to `parse_expr_str()`. Variable assignments (`name = ...`) are detected by non-keyword, non-register first token with `=`. The `if` and `while` keywords are intercepted at the `parse_block` level: after accumulating instruction text, control-flow parsing extracts the condition via `parse_expr_str()`, consumes the body block, and for `if` handles `else { }` / `else if ...` chains via `parse_else_tail()`. The `io` keyword dispatches to `write`/`writeln`/`read`/`readln` sub-commands. The `let`/`let mut` keywords parse a variable name, skip to `=`, evaluate the expression into `SystemVarBuffer`, then emit `OpCode::Variable`.
 - `expr_parser.rs` — Pratt precedence-climbing expression parser. `parse_expr_str()` tokenizes the expression string (with operator-aware splitting) then calls `parse_expression()`. Constant-folds unary `-` on unsigned literals (e.g., `-128` → `I32(-128)` instead of `Unary(Neg, U8(128))`).
 
 ## Comments
@@ -137,8 +175,8 @@ io readln $a2;           // read stdin line, store as String in register
 ### `ralr` (VM runtime — `bin/ralr/`)
 Reads `.abin` binary files, deserializes them, and executes instructions against a `Registers` state.
 
-- `main.rs` — Uses `tracing` for structured logging. Reads the file, bincode-deserializes to `Vec<OpCode>`, calls `runner()` on a fresh `Registers`.
-- `runner.rs` — Synchronous execution loop. `resolve()` dispatches `Operand::Literal` (clone) vs `Operand::Register` (array index into `Registers`). Arithmetic ops resolve both operands, perform the operation, write result to destination register. `Println`/`Print` resolve and display (`Print` explicitly flushes stdout). `Block` recursively executes inner opcodes with the same register context. `Expr` evaluates the expression tree via `eval_expr()` (recursive dispatch through `BinOp`/`UnOp` operators) and writes the result to the destination register. `If` evaluates the condition via `eval_expr()`, then executes the then-body or else-body (if present) based on the `Bool` result; panics on non-Bool conditions.
+- `main.rs` — Uses `tracing` for structured logging. Reads the file, bincode-deserializes to `Vec<OpCode>`, creates a fresh `Registers` and `AHashMap<String, Variable>`, calls `runner()`.
+- `runner.rs` — Synchronous execution loop. `resolve()` dispatches `Operand::Literal` (clone), `Operand::Register` (array index into `Registers`), or `Operand::Variable` (clone from variable hashmap). Arithmetic ops resolve both operands, perform the operation, write result to destination register. `IO(IoOp::Write)`/`Writeln` resolve and display (`Write` flushes stdout); `Read`/`Readln` read from stdin. `Block` recursively executes inner opcodes with the same register/variable/function context. `Expr` evaluates the expression tree via `eval_expr()` (recursive dispatch through `BinOp`/`UnOp` operators, with variable lookup at leaf nodes) and writes the result to the destination operand. `If` evaluates the condition via `eval_expr()`, then executes the then-body or else-body (if present) based on the `Bool` result; panics on non-Bool conditions. `While` re-evaluates the condition each iteration; panics on non-Bool. `Variable` inserts a named value into the hashmap using `SystemVarBuffer` as the source. `FnDef` registers a function in the function table. `Call` evaluates arguments, saves shadowed variables, binds parameters, executes the function body, reads the return value from `SystemVarBuffer`, restores shadowed variables, and writes the result to the destination. `Return` evaluates an expression and writes the result to `SystemVarBuffer`. The function table (`&mut AHashMap<String, FnDef>`) is threaded through all recursive `runner` calls.
 
 ## Tests
 
@@ -181,3 +219,5 @@ Start at `docs/INDEX.md` for the language selector.
 - `examples/expr.ralr` — Comprehensive expression syntax demo: arithmetic, comparison, logical, bitwise, shift, unary operators, and complex nested expressions with precedence.
 - `examples/if_else.ralr` — `if`/`else if`/`else` control flow: simple branches, chained conditions, nested `if`, and compound expression conditions.
 - `examples/io.ralr` — `io write`/`writeln` output with literals, registers, and bools. Legacy `_print`/`_println` compatibility.
+- `examples/var.ralr` — Variable declaration (`let`/`let mut`), variable assignment, and expression evaluation with named variables.
+- `examples/fn.ralr` — Function definitions (`fn`), calls (`call`), return values, parameter scoping, closures over outer variables, and conditional logic inside functions.
