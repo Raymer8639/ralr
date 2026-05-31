@@ -9,7 +9,7 @@ The following conventions apply to every change made in this repository:
 1. **Every feature → test + docs.** Before committing a new feature or bug fix, add or update the corresponding tests under `tests/tests/` and update relevant documentation (`CLAUDE.md`, docs under `docs/`, or `README.md`).
 2. **Every release → version bump.** When publishing a release, update the version in all `Cargo.toml` files, update `CHANGELOG.md` with the release notes, and tag the commit (`git tag vX.Y.Z`).
 3. **Commit granularity.** Commit each logical change separately with a descriptive message. Do not batch unrelated changes into one commit.
-4. **After completing work:** run `git push`, then tell the user so they can open a pull request.
+4. **Never push directly to `main`.** Always push to a feature branch (e.g., `feature/description`), then tell the user so they can open a pull request to merge into `main`.
 
 ## Build & Run
 

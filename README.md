@@ -155,8 +155,6 @@ Multi-language docs under [`docs/`](docs/):
 |----------|-----------|
 | 中文 | [`docs/zh/`](docs/zh/) |
 | English | [`docs/en/`](docs/en/) |
-| 日本語 | [`docs/ja/`](docs/ja/) |
-| Русский | [`docs/ru/`](docs/ru/) |
 
 Start at [`docs/INDEX.md`](docs/INDEX.md) for the language selector.
 
