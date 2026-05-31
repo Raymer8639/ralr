@@ -1,0 +1,3 @@
+io writeln "Hello, world!";
+io write "Hello\nWorld!\n";
+io writeln "";
