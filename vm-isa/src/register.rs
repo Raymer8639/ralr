@@ -78,6 +78,13 @@ impl Registers {
     pub fn write(&mut self, reg: Register, value: Value) {
         self.inner[reg.index()] = value;
     }
+
+    /// Takes the value out of a register, leaving [`Value::None`] in
+    /// its place. Avoids cloning when the old value is no longer needed.
+    /// 中文：从寄存器中取出值，在原位留下 [`Value::None`]。当旧值不再需要时避免克隆。
+    pub fn take(&mut self, reg: Register) -> Value {
+        std::mem::replace(&mut self.inner[reg.index()], Value::None)
+    }
 }
 
 impl Default for Registers {

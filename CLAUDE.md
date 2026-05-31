@@ -2,11 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Development rules
+
+The following conventions apply to every change made in this repository:
+
+1. **Every feature → test + docs.** Before committing a new feature or bug fix, add or update the corresponding tests under `tests/tests/` and update relevant documentation (`CLAUDE.md`, docs under `docs/`, or `README.md`).
+2. **Every release → version bump.** When publishing a release, update the version in all `Cargo.toml` files, update `CHANGELOG.md` with the release notes, and tag the commit (`git tag vX.Y.Z`).
+3. **Commit granularity.** Commit each logical change separately with a descriptive message. Do not batch unrelated changes into one commit.
+4. **After completing work:** run `git push`, then tell the user so they can open a pull request.
+
 ## Build & Run
 
 ```bash
 cargo build                    # Dev build all workspace crates
-cargo build --release          # Release build
+cargo build --release          # Release build (LTO, single codegen unit, stripped, panic=abort)
 cargo fmt                      # Format
 cargo clippy                   # Lint
 ./install.sh                   # Build release + cargo install --force both binaries to ~/.cargo/bin/
@@ -28,17 +37,17 @@ ralr-asm examples/add.ralr -o add.abin && ralr add.abin
 
 This is a simple register-based VM with its own assembler. A Cargo workspace with three crates:
 
-### `vm_isa` (shared library — `crates/vm-isa/`)
+### `vm_isa` (shared library — `vm-isa/`)
 The instruction set architecture. Defines the core types that both the assembler and VM depend on:
 
 - **`OpCode`** — Arithmetic (`Add`, `Sub`, `Mul`, `Div`) each take `(Operand, Operand, Register)`. I/O via `IO(IoOp)` with `Write`/`Writeln`/`Read`/`Readln` sub-variants (legacy `Println`/`Print` still exist). Control flow: `Block(Vec<OpCode>)` for nested scopes, `Expr(Expr, Operand)` for expression tree evaluation, `If(Expr, Vec<OpCode>, Option<Vec<OpCode>>)` for conditional branching, `While(Expr, Vec<OpCode>)` for while loops. Variable declarations: `Variable(String, Variable)`. Functions: `FnDef { name, params, body }` for definitions, `Call { name, args, dest }` for calls, `Return(Expr)` for return values.
-- **`Expr`** (`crates/vm-isa/src/expr.rs`) — Expression AST with `Operand(Operand)`, `Binary`, and `Unary` nodes. Leaf nodes (`Operand`) can be literals, register references, or named variable references. 18 binary operators (`BinOp`) and 3 unary operators (`UnOp`) covering arithmetic, comparison, logical, and bitwise operations. `eval_expr()` evaluates against both the register file and a variable hashmap.
+- **`Expr`** (`vm-isa/src/expr.rs`) — Expression AST with `Operand(Operand)`, `Binary`, and `Unary` nodes. Leaf nodes (`Operand`) can be literals, register references, or named variable references. 18 binary operators (`BinOp`) and 3 unary operators (`UnOp`) covering arithmetic, comparison, logical, and bitwise operations. `eval_expr()` evaluates against both the register file and a variable hashmap.
 - **`Operand`** — `Literal(Value)`, `Register(Register)`, or `Variable(String, Variable)`. Separates immediates, register references, and named variable references at the type level.
 - **`Value`** — A tagged union of 10 variants: `None`, signed/unsigned ints (`I32`, `I128`, `U8`, `U32`, `U128`), floats (`F32`, `F64`), `Bool`, `String`. Arithmetic is implemented via the `op!` macro that generates type-matching arms.
-- **`Variable`** (`crates/vm-isa/src/variable.rs`) — `Variable { is_mut: bool, value: Value }`. Named, mutable-or-immutable value storage that lives in a hashmap parallel to the register file.
-- **`FnDef`** (`crates/vm-isa/src/function.rs`) — `FnDef { params: Vec<String>, body: Vec<OpCode> }`. Stored representation of a user-defined function, registered at definition time and replayed on each call.
+- **`Variable`** (`vm-isa/src/variable.rs`) — `Variable { is_mut: bool, value: Value }`. Named, mutable-or-immutable value storage that lives in a hashmap parallel to the register file.
+- **`FnDef`** (`vm-isa/src/function.rs`) — `FnDef { params: Vec<String>, body: Vec<OpCode> }`. Stored representation of a user-defined function, registered at definition time and replayed on each call.
 - **`Register`** — A `Copy` enum (`A1`–`A5`, `SystemVarBuffer`) with `index()` mapping to array slots `0..5`. `SystemVarBuffer` is an internal buffer used during variable declaration to transfer expression results into the variable hashmap.
-- **`Registers`** — Runtime register file backed by `[Value; 6]` with O(1) `read`/`write`.
+- **`Registers`** — Runtime register file backed by `[Value; 6]` with O(1) `read`/`write`/`take`. `take()` uses `mem::replace` with `Value::None` to avoid cloning when the old value is no longer needed (e.g., `Variable` insertion, `Call` return-value capture).
 
 **Key design:** Resolution happens at the `OpCode` level via `Operand`, not inside `Value`. The VM's `resolve()` function dispatches `Operand::Literal(v)` → clone, `Operand::Register(r)` → array lookup, or `Operand::Variable(_, v)` → clone from the variable's current value. Variables live in an `AHashMap<String, Variable>` that is threaded through `runner()` and `eval_expr()`, separate from the fixed-size register file.
 
@@ -46,7 +55,7 @@ The instruction set architecture. Defines the core types that both the assembler
 
 All crates use Rust edition 2024. Workspace dependencies: `clap` (CLI), `anyhow` (errors), `bincode` + `serde` (serialization), `tracing` + `tracing-subscriber` (structured logging in `ralr`), `ahash` (fast hasher for variable map). String escape processing is handled by `unescape_str()` in `reader.rs` (no external crate needed).
 
-### `ralr-asm` (assembler — `bin/ralr-asm/`)
+### `ralr-asm` (assembler — `ralr-asm/`)
 Reads `.ralr` source files and emits `.abin` binary files (default output: `output.abin`).
 
 **`.ralr` instruction format:**
@@ -172,11 +181,11 @@ io readln $a2;           // read stdin line, store as String in register
 - `/* … */` — block comment, everything between `/*` and `*/` is ignored (multi-line)
 - Comment delimiters inside `"..."` strings are treated as literal text, not comments.
 
-### `ralr` (VM runtime — `bin/ralr/`)
+### `ralr` (VM runtime — `ralr/`)
 Reads `.abin` binary files, deserializes them, and executes instructions against a `Registers` state.
 
 - `main.rs` — Uses `tracing` for structured logging. Reads the file, bincode-deserializes to `Vec<OpCode>`, creates a fresh `Registers` and `AHashMap<String, Variable>`, calls `runner()`.
-- `runner.rs` — Synchronous execution loop. `resolve()` dispatches `Operand::Literal` (clone), `Operand::Register` (array index into `Registers`), or `Operand::Variable` (clone from variable hashmap). Arithmetic ops resolve both operands, perform the operation, write result to destination register. `IO(IoOp::Write)`/`Writeln` resolve and display (`Write` flushes stdout); `Read`/`Readln` read from stdin. `Block` recursively executes inner opcodes with the same register/variable/function context. `Expr` evaluates the expression tree via `eval_expr()` (recursive dispatch through `BinOp`/`UnOp` operators, with variable lookup at leaf nodes) and writes the result to the destination operand. `If` evaluates the condition via `eval_expr()`, then executes the then-body or else-body (if present) based on the `Bool` result; panics on non-Bool conditions. `While` re-evaluates the condition each iteration; panics on non-Bool. `Variable` inserts a named value into the hashmap using `SystemVarBuffer` as the source. `FnDef` registers a function in the function table. `Call` evaluates arguments, saves shadowed variables, binds parameters, executes the function body, reads the return value from `SystemVarBuffer`, restores shadowed variables, and writes the result to the destination. `Return` evaluates an expression and writes the result to `SystemVarBuffer`. The function table (`&mut AHashMap<String, FnDef>`) is threaded through all recursive `runner` calls.
+- `runner.rs` — Synchronous execution loop. Two operand-resolution helpers: `resolve()` returns an owned `Value` (cloning for `Register`/`Variable` lookups — used by arithmetic ops that consume operands); `resolve_ref()` returns a shared `&Value` without cloning (used by I/O output paths where only `Display` is needed). Arithmetic ops resolve both operands via `resolve()`, perform the operation, write result to destination register. `IO(IoOp::Write)`/`Writeln` resolve via `resolve_ref()` and display (`Write` flushes stdout); `Read`/`Readln` read from stdin. `Block` recursively executes inner opcodes with the same register/variable/function context. `Expr` evaluates the expression tree via `eval_expr()` (recursive dispatch through `BinOp`/`UnOp` operators, with variable lookup at leaf nodes) and writes the result to the destination operand. `If` evaluates the condition via `eval_expr()`, then executes the then-body or else-body (if present) based on the `Bool` result; panics on non-Bool conditions. `While` re-evaluates the condition each iteration; panics on non-Bool. `Variable` inserts a named value into the hashmap using `SystemVarBuffer` as the source (via `regs.take()` to avoid cloning). `FnDef` registers a function in the function table. `Call` evaluates arguments, saves shadowed variables, binds parameters, executes the function body, reads the return value from `SystemVarBuffer` (via `regs.take()`), restores shadowed variables, and writes the result to the destination. `Return` evaluates an expression and writes the result to `SystemVarBuffer`. The function table (`&mut AHashMap<String, FnDef>`) is threaded through all recursive `runner` calls.
 
 ## Tests
 

@@ -36,6 +36,28 @@ fn resolve(operand: &Operand, regs: &Registers, variables: &AHashMap<String, Var
     }
 }
 
+/// Resolves an operand to a shared reference without cloning.
+/// 中文：将操作数解析为共享引用，不进行克隆。
+///
+/// Used in I/O paths where only a `&Value` is needed (e.g., `Display`).
+/// 中文：用于仅需要 `&Value` 的 I/O 路径（例如 `Display`）。
+fn resolve_ref<'a>(
+    operand: &'a Operand,
+    regs: &'a Registers,
+    variables: &'a AHashMap<String, Variable>,
+) -> &'a Value {
+    match operand {
+        Operand::Literal(v) => v,
+        Operand::Register(r) => regs.read(*r),
+        Operand::Variable(name, _) => {
+            let var = variables
+                .get(name)
+                .unwrap_or_else(|| panic!("variable not found: {name}"));
+            &var.value
+        }
+    }
+}
+
 /// Parses a string read from stdin into a [`Value`], using the same
 /// numeric-inference chain as the assembler: U8 → U32 → U128 → I32 →
 /// I128 → F32 → F64. Recognizes "true"/"false" as Bool. Falls back to
@@ -118,10 +140,10 @@ pub fn runner(
                 regs.write(*dest, result);
             }
             OpCode::Println(val) => {
-                println!("{}", resolve(val, regs, variables));
+                println!("{}", resolve_ref(val, regs, variables));
             }
             OpCode::Print(val) => {
-                print!("{}", resolve(val, regs, variables));
+                print!("{}", resolve_ref(val, regs, variables));
                 io::stdout().flush().unwrap();
             }
             OpCode::Block(inner) => {
@@ -169,13 +191,13 @@ pub fn runner(
                 IoOp::Write(val) => {
                     // Print operand without trailing newline, flush stdout.
                     // 中文：打印操作数，末尾不换行，刷新标准输出。
-                    print!("{}", resolve(val, regs, variables));
+                    print!("{}", resolve_ref(val, regs, variables));
                     io::stdout().flush().unwrap();
                 }
                 IoOp::Writeln(val) => {
                     // Print operand followed by a newline.
                     // 中文：打印操作数并换行。
-                    println!("{}", resolve(val, regs, variables));
+                    println!("{}", resolve_ref(val, regs, variables));
                 }
                 IoOp::Read(reg) => {
                     // Read stdin line, parse as Value via type-inference chain.
@@ -212,11 +234,14 @@ pub fn runner(
                 }
             },
             OpCode::Variable(var_name, var) => {
+                // take() avoids cloning the SystemVarBuffer value.
+                // 中文：take() 避免克隆 SystemVarBuffer 的值。
+                let val = regs.take(Register::SystemVarBuffer);
                 variables.insert(
                     (*var_name).clone(),
                     Variable {
                         is_mut: var.is_mut,
-                        value: (*regs.read(Register::SystemVarBuffer)).clone(),
+                        value: val,
                     },
                 );
             }
@@ -277,9 +302,10 @@ pub fn runner(
                 // Execute the function body.
                 // 中文：执行函数体。
                 runner(&fn_def.body, regs, variables, functions)?;
-                // Retrieve the return value from SystemVarBuffer.
-                // 中文：从 SystemVarBuffer 获取返回值。
-                let ret_val = regs.read(Register::SystemVarBuffer).clone();
+                // Retrieve the return value from SystemVarBuffer
+                // via take() to avoid cloning the Value.
+                // 中文：通过 take() 获取返回值，避免克隆 Value。
+                let ret_val = regs.take(Register::SystemVarBuffer);
                 // Restore shadowed variables.
                 // 中文：恢复被遮蔽的变量。
                 for (param_name, old_var) in saved {
