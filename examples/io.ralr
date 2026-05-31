@@ -26,9 +26,11 @@ _println "=== legacy keywords still work ===";
 _println "this is _println";
 _print "this is _print\n";
 
+io write "Press a string: ";
 io readln $a1;
 io writeln $a1;
 
+io write "Press a string: ";
 io read $a2;
 io writeln $a2;
 

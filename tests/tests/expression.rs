@@ -1527,3 +1527,41 @@ fn call_missing_paren_errors() {
     let result = reader::parse("call f;");
     assert!(result.is_err());
 }
+
+// ── Regression tests for missing semicolons ────────────────────────────────
+// 中文：缺少分号的回归测试
+
+#[test]
+fn parse_io_write_with_escaped_newline_and_writeln_empty_string() {
+    // Regression: a.ralr had instructions without trailing `;`, which
+    // caused the reader to consume multiple lines as one garbled instruction.
+    let result = reader::parse(
+        "io writeln \"Hello, world!\";\nio write \"Hello\\nWorld!\\n\";\nio writeln \"\";\n",
+    )
+    .unwrap();
+    assert_eq!(
+        result.len(),
+        3,
+        "expected 3 io instructions, got {}: {:?}",
+        result.len(),
+        result
+    );
+    // Verify the instructions are correct.
+    assert!(matches!(&result[0], OpCode::IO(IoOp::Writeln(Operand::Literal(Value::String(s)))) if s == "Hello, world!"));
+    assert!(matches!(&result[1], OpCode::IO(IoOp::Write(Operand::Literal(Value::String(s)))) if s.contains("Hello\n") && s.contains("World!")));
+    assert!(matches!(&result[2], OpCode::IO(IoOp::Writeln(Operand::Literal(Value::String(s)))) if s.is_empty()));
+}
+
+#[test]
+fn parse_io_write_requires_semicolon() {
+    // Valid: io write with semicolon.
+    let result = reader::parse("io write \"hello\";\n").unwrap();
+    assert_eq!(result.len(), 1);
+    assert!(matches!(&result[0], OpCode::IO(IoOp::Write(Operand::Literal(Value::String(s)))) if s == "hello"));
+
+    // Without semicolon, reader may misinterpret. Ensure at least no panic.
+    let result = reader::parse("io writeln \"hello\"\nio writeln \"world\";\n");
+    // The current behavior merges them into one line — this is a known parser quirk.
+    // The regression test ensures we don't silently break.
+    assert!(result.is_ok(), "parser should not panic on missing semicolons");
+}

@@ -1,4 +1,6 @@
-# ralr &emsp; [![CI](https://github.com/Raymer8639/ralr/actions/workflows/rust.yml/badge.svg)](https://github.com/Raymer8639/ralr/actions/workflows/rust.yml) [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+# Ralr
+
+&emsp; [![CI](https://github.com/Raymer8639/ralr/actions/workflows/rust.yml/badge.svg)](https://github.com/Raymer8639/ralr/actions/workflows/rust.yml) [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 > **R**aymer's **A**ssembler and **L**oader — a simple register-based VM with its own assembler, written in Rust.
 
@@ -8,11 +10,11 @@
 
 ralr is a lightweight virtual machine with a custom register-based instruction set. It comes with:
 
-| Component | Description |
-|-----------|-------------|
+| Component  | Description                                             |
+| ---------- | ------------------------------------------------------- |
 | `ralr-asm` | Assembler — compiles `.ralr` source to `.abin` bytecode |
-| `ralr` | VM runtime — loads and executes `.abin` files |
-| `vm-isa` | Shared library — instruction set architecture types |
+| `ralr`     | VM runtime — loads and executes `.abin` files           |
+| `vm-isa`   | Shared library — instruction set architecture types     |
 
 The VM supports variables, control flow (`if`/`else`/`while`), functions with parameters and return values, I/O operations, and a full expression system with operator precedence.
 
@@ -133,17 +135,17 @@ See [CLAUDE.md](CLAUDE.md) for the full architecture reference.
 
 ## Examples
 
-| File | Demonstrates |
-|------|-------------|
-| [`add.ralr`](examples/add.ralr) | Arithmetic with register chaining |
-| [`print.ralr`](examples/print.ralr) | Output and escape sequences |
-| [`block.ralr`](examples/block.ralr) | Nested `{ }` code blocks |
-| [`expr.ralr`](examples/expr.ralr) | Expression system with full operator precedence |
-| [`if_else.ralr`](examples/if_else.ralr) | Conditional branching |
-| [`while.ralr`](examples/while.ralr) | While loops |
-| [`io.ralr`](examples/io.ralr) | I/O operations |
-| [`var.ralr`](examples/var.ralr) | Variables and mutation |
-| [`fn.ralr`](examples/fn.ralr) | Functions, parameters, closures |
+| File                                    | Demonstrates                                    |
+| --------------------------------------- | ----------------------------------------------- |
+| [`add.ralr`](examples/add.ralr)         | Arithmetic with register chaining               |
+| [`print.ralr`](examples/print.ralr)     | Output and escape sequences                     |
+| [`block.ralr`](examples/block.ralr)     | Nested `{ }` code blocks                        |
+| [`expr.ralr`](examples/expr.ralr)       | Expression system with full operator precedence |
+| [`if_else.ralr`](examples/if_else.ralr) | Conditional branching                           |
+| [`while.ralr`](examples/while.ralr)     | While loops                                     |
+| [`io.ralr`](examples/io.ralr)           | I/O operations                                  |
+| [`var.ralr`](examples/var.ralr)         | Variables and mutation                          |
+| [`fn.ralr`](examples/fn.ralr)           | Functions, parameters, closures                 |
 
 ---
 
@@ -151,10 +153,10 @@ See [CLAUDE.md](CLAUDE.md) for the full architecture reference.
 
 Multi-language docs under [`docs/`](docs/):
 
-| Language | Directory |
-|----------|-----------|
-| 中文 | [`docs/zh/`](docs/zh/) |
-| English | [`docs/en/`](docs/en/) |
+| Language | Directory              |
+| -------- | ---------------------- |
+| 中文     | [`docs/zh/`](docs/zh/) |
+| English  | [`docs/en/`](docs/en/) |
 
 Start at [`docs/INDEX.md`](docs/INDEX.md) for the language selector.
 
