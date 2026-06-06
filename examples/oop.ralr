@@ -1,0 +1,81 @@
+// Object-oriented syntax demo
+// 中文：面向对象语法演示
+
+// A class with two fields and an `init` constructor.
+// 中文：带两个字段和 `init` 构造函数的类。
+class Point {
+    let x = 0;
+    let y = 0;
+
+    // The constructor: first parameter is always `self`.
+    // 中文：构造函数：第一个参数始终是 `self`。
+    fn init(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+
+    // A method that reads fields and returns a value.
+    // 中文：读取字段并返回值的方法。
+    fn sum(self) {
+        return self.x + self.y;
+    }
+
+    // A method that mutates the receiver in place.
+    // 中文：就地修改接收者的方法。
+    fn shift(self, dx, dy) {
+        self.x = self.x + dx;
+        self.y = self.y + dy;
+    }
+}
+
+// Construct an object — `init` runs with (3, 4).
+// 中文：构造对象 — `init` 以 (3, 4) 运行。
+let mut p = new Point(3, 4);
+
+// Field read inside an expression.
+// 中文：在表达式中读取字段。
+io write "p.x = ";
+io writeln p.x;
+io write "p.y = ";
+io writeln p.y;
+
+// Method call capturing the return value.
+// 中文：捕获返回值的方法调用。
+$a1 = p.sum();
+io write "p.sum() = ";
+io writeln $a1;
+
+// Method call mutating the object; mutations persist back into `p`.
+// 中文：修改对象的方法调用；修改持久化回 `p`。
+p.shift(10, 20);
+io write "after shift, p.sum() = ";
+$a2 = p.sum();
+io writeln $a2;
+
+// Direct field assignment.
+// 中文：直接字段赋值。
+p.x = 100;
+io write "after p.x = 100, p = ";
+io writeln p;
+
+// A class with no init: fields keep their defaults.
+// 中文：无 init 的类：字段保持默认值。
+class Counter {
+    let n = 0;
+
+    fn bump(self) {
+        self.n = self.n + 1;
+    }
+
+    fn get(self) {
+        return self.n;
+    }
+}
+
+let mut c = new Counter();
+c.bump();
+c.bump();
+c.bump();
+io write "counter = ";
+$a3 = c.get();
+io writeln $a3;

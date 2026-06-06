@@ -282,6 +282,84 @@ fn max(a, b) {
 }
 ```
 
+## Classes (`class`, `new`)
+
+Classes group fields and methods, layering object-oriented programming on top of the variable and function machinery.
+
+### Defining a Class
+
+```
+class Name {
+    let field1 = default1;        // field with default initializer
+    let field2 = default2;
+
+    fn init(self, a, b) {         // optional constructor
+        self.field1 = a;
+        self.field2 = b;
+    }
+
+    fn method(self, arg) {        // method
+        return self.field1 + arg;
+    }
+}
+```
+
+- A class body may contain **only** field declarations (`let name = expr;`) and method definitions (`fn name(self, ...) { ... }`).
+- Every method's first parameter is `self`, which is bound to the receiver object when the method is called.
+- A method named `init` is the **constructor**, invoked automatically by `new`.
+
+### Creating an Object
+
+```
+$reg = new Name(args);
+let obj = new Name(args);
+```
+
+- `new` initializes every field to its default, then runs `init` (if defined) with the receiver bound to `self` and the arguments bound to the remaining parameters.
+- A class with no `init` must be constructed with no arguments: `new Counter()`.
+
+### Fields and Methods
+
+```
+obj.field                  // read a field (usable in any expression)
+obj.field = expr;          // assign a field
+obj.method(args);          // call a method, discarding the result
+$reg = obj.method(args);   // call a method, capturing the return value
+```
+
+- Field reads work anywhere an expression is parsed — assignments, `let`, conditions, arguments, and `io write`/`writeln` operands.
+- Methods may mutate `self`; the changes persist back into the receiver. Objects therefore have reference-like mutation semantics (a field can be changed even through an immutable `let` binding).
+- The receiver of a method call must be a **simple variable name**; for a deeper receiver, bind it to an intermediate variable first.
+
+### Example
+
+```
+class Point {
+    let x = 0;
+    let y = 0;
+
+    fn init(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+
+    fn sum(self) {
+        return self.x + self.y;
+    }
+
+    fn shift(self, dx, dy) {
+        self.x = self.x + dx;
+        self.y = self.y + dy;
+    }
+}
+
+let mut p = new Point(3, 4);
+$a1 = p.sum();        // 7
+p.shift(10, 20);      // p is now (13, 24)
+p.x = 100;
+io writeln p;         // Point { x: 100, y: 24 }
+```
+
 ## I/O Operations (`io` Keyword)
 
 The `io` keyword unifies all I/O operations through sub-commands:
@@ -341,6 +419,9 @@ The assembler automatically infers value types from literals with the following 
 | `F32` | Numbers with a decimal point | 32-bit float |
 | `F64` | Numbers with a decimal point (default) | 64-bit float |
 | `String` | Double-quoted strings, e.g. `"hello"`, supporting all ASCII escape sequences | String |
+| `Object` | Created with `new ClassName(...)` | User-defined object instance; prints as `ClassName { field: value, ... }` |
+
+> `Object` values are not numeric or comparable — arithmetic or comparison on an object panics at runtime.
 
 ### Escape Sequences
 

@@ -208,21 +208,53 @@ fn parse_prefix(tokens: &[&str], pos: usize) -> Result<(Expr, usize)> {
                 // rather than silently falling through to a variable reference.
                 // 中文：带引号的字符串字面量 — 必须解析为有效值。无效的转义序列（如 \w）会作为错误传播，而非静默回退为变量引用。
                 Ok((Expr::Operand(Operand::Literal(to_value(s)?)), 1))
+            } else if let Ok(v) = to_value(s) {
+                // Bare literal (number or bool).
+                // 中文：裸字面量（数字或布尔值）。
+                Ok((Expr::Operand(Operand::Literal(v)), 1))
+            } else if s.contains('.') {
+                // Field-access chain: `base.f1.f2`. The base is a register
+                // ($-prefixed) or a named variable; each `.segment` becomes
+                // a nested `Expr::Field`. (Numeric literals like `3.14`
+                // were already handled by the `to_value` arm above.)
+                // 中文：字段访问链：`base.f1.f2`。基为寄存器（$ 前缀）或命名变量；
+                // 每个 `.段` 成为嵌套的 `Expr::Field`。（像 `3.14` 这样的数字字面量已在上面处理。）
+                let mut parts = s.split('.');
+                let base = parts.next().unwrap();
+                if base.is_empty() {
+                    return Err(anyhow!("malformed field access: {s}"));
+                }
+                let mut expr = if base.starts_with('$') {
+                    Expr::Operand(Operand::Register(to_register(base)?))
+                } else {
+                    Expr::Operand(Operand::Variable(
+                        base.to_string(),
+                        Variable {
+                            is_mut: false,
+                            value: Value::None,
+                        },
+                    ))
+                };
+                for field in parts {
+                    if field.is_empty() {
+                        return Err(anyhow!("malformed field access: {s}"));
+                    }
+                    expr = Expr::Field(Box::new(expr), field.to_string());
+                }
+                Ok((expr, 1))
             } else {
-                // Bare word — try literal (number, bool) first,
-                // fall back to named variable reference.
-                // 中文：裸词 — 首先尝试字面量（数字、布尔值），回退到命名变量引用。
-                let operand = match to_value(s) {
-                    Ok(v) => Operand::Literal(v),
-                    Err(_) => Operand::Variable(
+                // Bare word — a named variable reference.
+                // 中文：裸词 — 命名变量引用。
+                Ok((
+                    Expr::Operand(Operand::Variable(
                         s.to_string(),
                         Variable {
                             is_mut: false,
                             value: Value::None,
                         },
-                    ),
-                };
-                Ok((Expr::Operand(operand), 1))
+                    )),
+                    1,
+                ))
             }
         }
     }

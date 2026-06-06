@@ -49,6 +49,12 @@ pub enum Expr {
     Operand(Operand),
     Binary(Box<Expr>, BinOp, Box<Expr>),
     Unary(UnOp, Box<Expr>),
+    /// Field access on an object expression: `obj.field`. The inner
+    /// expression must evaluate to a [`Value::Object`]; chains like
+    /// `a.b.c` nest `Field` nodes.
+    /// 中文：对象表达式上的字段访问：`obj.field`。内部表达式必须求值为 [`Value::Object`]；
+    /// 像 `a.b.c` 这样的链会嵌套 `Field` 节点。
+    Field(Box<Expr>, String),
 }
 impl Expr {
     /// Recursively evaluates an expression tree against the register file.
@@ -103,6 +109,18 @@ impl Expr {
                     UnOp::Neg => -val,
                     UnOp::Not => val.logical_not(),
                     UnOp::BitNot => val.bitwise_not(),
+                }
+            }
+            Expr::Field(inner, field) => {
+                // Evaluate the receiver, then read the named field.
+                // 中文：计算接收者，然后读取命名字段。
+                match self.eval_expr(inner, regs, variables) {
+                    Value::Object(inst) => inst
+                        .fields
+                        .get(field)
+                        .unwrap_or_else(|| panic!("field not found: {field}"))
+                        .clone(),
+                    other => panic!("cannot access field '{field}' on non-object: {other:?}"),
                 }
             }
         }

@@ -8,7 +8,10 @@
 
 use anyhow::{Result, anyhow};
 use std::char;
+use std::collections::BTreeMap;
 use vm_isa::{
+    class::ClassDef,
+    function::FnDef,
     op_code::{Expr, IoOp, OpCode, Operand},
     register::Register,
     value::Value,
@@ -167,6 +170,31 @@ fn to_operand(str: &str) -> Result<Operand> {
     }
 }
 
+/// Resolves an output operand for I/O instructions, supporting field
+/// access. A plain token becomes an [`Operand`] directly; a field-access
+/// token (e.g. `obj.field`) is lowered to an [`OpCode::Expr`] that
+/// evaluates into `SystemVarBuffer`, and the returned operand reads that
+/// register.
+/// 中文：解析 I/O 指令的输出操作数，支持字段访问。普通标记直接成为 [`Operand`]；
+/// 字段访问标记（如 `obj.field`）被降级为计算到 SystemVarBuffer 的 [`OpCode::Expr`]，
+/// 返回的操作数读取该寄存器。
+fn io_operand(token: &str, cmds: &mut Vec<OpCode>) -> Result<Operand> {
+    if !token.starts_with('$')
+        && !token.starts_with('"')
+        && token.contains('.')
+        && to_value(token).is_err()
+    {
+        let expr = parse_expr_str(token)?;
+        cmds.push(OpCode::Expr(
+            expr,
+            Operand::Register(Register::SystemVarBuffer),
+        ));
+        Ok(Operand::Register(Register::SystemVarBuffer))
+    } else {
+        to_operand(token)
+    }
+}
+
 /// Splits a command string into tokens on whitespace while keeping
 /// quoted strings intact.
 /// 中文：在空白字符处将命令字符串拆分为标记，同时保持带引号的字符串完整。
@@ -233,37 +261,181 @@ fn push_call_opcode(text: &str, dest: Operand, cmds: &mut Vec<OpCode>) -> Result
     let close_paren = after_paren
         .rfind(')')
         .ok_or(anyhow!("expected ')' in function call"))?;
-    let args_str = after_paren[..close_paren].trim();
-    // Parse comma-separated argument expressions.
-    // 中文：解析逗号分隔的参数表达式。
-    let args: Vec<Expr> = if args_str.is_empty() {
-        vec![]
-    } else {
-        // Split on top-level commas only (not inside nested parens).
-        // 中文：仅按顶层逗号拆分（不在嵌套括号内拆分）。
-        let mut arg_exprs = vec![];
-        let mut depth = 0u32;
-        let mut start = 0usize;
-        for (i, ch) in args_str.char_indices() {
-            match ch {
-                '(' => depth += 1,
-                ')' => depth -= 1,
-                ',' if depth == 0 => {
-                    arg_exprs.push(parse_expr_str(args_str[start..i].trim())?);
-                    start = i + 1;
-                }
-                _ => {}
-            }
-        }
-        arg_exprs.push(parse_expr_str(args_str[start..].trim())?);
-        arg_exprs
-    };
+    let args = parse_arg_list(after_paren[..close_paren].trim())?;
     cmds.push(OpCode::Call {
         name: fn_name,
         args,
         dest,
     });
     Ok(())
+}
+
+/// Parses a comma-separated argument list into a vector of [`Expr`].
+/// 中文：将逗号分隔的参数列表解析为 [`Expr`] 向量。
+///
+/// Splits on top-level commas only (commas inside nested parentheses are
+/// preserved). An empty string yields an empty vector.
+/// 中文：仅按顶层逗号拆分（嵌套括号内的逗号被保留）。空字符串产生空向量。
+fn parse_arg_list(args_str: &str) -> Result<Vec<Expr>> {
+    if args_str.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut arg_exprs = vec![];
+    let mut depth = 0u32;
+    let mut start = 0usize;
+    for (i, ch) in args_str.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                arg_exprs.push(parse_expr_str(args_str[start..i].trim())?);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    arg_exprs.push(parse_expr_str(args_str[start..].trim())?);
+    Ok(arg_exprs)
+}
+
+/// Returns true if `expr_str` looks like a method call (`recv.method(...)`):
+/// it contains a `(` and the receiver part before it contains a `.`.
+/// 中文：如果 `expr_str` 看起来像方法调用（`recv.method(...)`），则返回 true：
+/// 它包含 `(`，且其前面的接收者部分包含 `.`。
+fn is_method_call_expr(expr_str: &str) -> bool {
+    match expr_str.find('(') {
+        Some(paren) => expr_str[..paren].contains('.'),
+        None => false,
+    }
+}
+
+/// Parses `new Class(args)` and pushes an [`OpCode::New`] onto `cmds`.
+/// 中文：解析 `new Class(args)` 并将 [`OpCode::New`] 推送到 `cmds`。
+fn push_new_opcode(text: &str, dest: Operand, cmds: &mut Vec<OpCode>) -> Result<()> {
+    let rest = text[3..].trim_start(); // after "new"
+    let paren_pos = rest
+        .find('(')
+        .ok_or(anyhow!("expected '(' in new expression"))?;
+    let class = rest[..paren_pos].trim().to_string();
+    if class.is_empty() {
+        return Err(anyhow!("expected class name after 'new'"));
+    }
+    let after_paren = &rest[paren_pos + 1..];
+    let close_paren = after_paren
+        .rfind(')')
+        .ok_or(anyhow!("expected ')' in new expression"))?;
+    let args = parse_arg_list(after_paren[..close_paren].trim())?;
+    cmds.push(OpCode::New { class, args, dest });
+    Ok(())
+}
+
+/// Parses `recv.method(args)` and pushes an [`OpCode::MethodCall`] onto
+/// `cmds`. The receiver must be a simple variable name (no nested field
+/// path); use an intermediate variable for deeper receivers.
+/// 中文：解析 `recv.method(args)` 并将 [`OpCode::MethodCall`] 推送到 `cmds`。
+/// 接收者必须是简单变量名（不支持嵌套字段路径）；更深的接收者请使用中间变量。
+fn push_method_call_opcode(text: &str, dest: Operand, cmds: &mut Vec<OpCode>) -> Result<()> {
+    let paren_pos = text
+        .find('(')
+        .ok_or(anyhow!("expected '(' in method call"))?;
+    let head = text[..paren_pos].trim();
+    let dot = head
+        .rfind('.')
+        .ok_or(anyhow!("expected '.' in method call"))?;
+    let recv = head[..dot].trim().to_string();
+    let method = head[dot + 1..].trim().to_string();
+    if recv.is_empty() || method.is_empty() {
+        return Err(anyhow!("malformed method call: {text}"));
+    }
+    let after_paren = &text[paren_pos + 1..];
+    let close_paren = after_paren
+        .rfind(')')
+        .ok_or(anyhow!("expected ')' in method call"))?;
+    let args = parse_arg_list(after_paren[..close_paren].trim())?;
+    cmds.push(OpCode::MethodCall {
+        recv,
+        method,
+        args,
+        dest,
+    });
+    Ok(())
+}
+
+/// Routes a right-hand-side expression string (the part after `=`, or a
+/// `let`/`return` initializer) to the correct opcode, writing its result
+/// to `dest`. Handles `call`, `new`, method calls, and plain expressions.
+/// 中文：将右侧表达式字符串（`=` 之后的部分，或 `let`/`return` 初始化器）路由到正确的操作码，结果写入 `dest`。
+/// 处理 `call`、`new`、方法调用和普通表达式。
+fn push_rhs_opcode(expr_str: &str, dest: Operand, cmds: &mut Vec<OpCode>) -> Result<()> {
+    if expr_str.starts_with("call ") || expr_str == "call" {
+        push_call_opcode(expr_str, dest, cmds)
+    } else if expr_str.starts_with("new ") || expr_str == "new" {
+        push_new_opcode(expr_str, dest, cmds)
+    } else if is_method_call_expr(expr_str) {
+        push_method_call_opcode(expr_str, dest, cmds)
+    } else {
+        cmds.push(OpCode::Expr(parse_expr_str(expr_str)?, dest));
+        Ok(())
+    }
+}
+
+/// Assembles a [`ClassDef`] from the opcodes parsed out of a class body.
+/// 中文：从类体解析出的操作码组装 [`ClassDef`]。
+///
+/// A class body may contain only field declarations (`let name = expr;`)
+/// and method definitions (`fn name(self, ...) { ... }`). A `let` lowers
+/// to an `Expr` writing `SystemVarBuffer` followed by a `Variable` opcode;
+/// this reconstructs the field as `(name, initializer)`. Anything else is
+/// an error.
+/// 中文：类体只能包含字段声明（`let name = expr;`）和方法定义（`fn name(self, ...) { ... }`）。
+/// `let` 会降级为写入 SystemVarBuffer 的 `Expr` 后跟 `Variable` 操作码；此处将字段重建为 `(名称, 初始化器)`。
+/// 其他内容均为错误。
+fn build_class_def(name: String, body: Vec<OpCode>) -> Result<OpCode> {
+    let mut fields: Vec<(String, Expr)> = Vec::new();
+    let mut methods: BTreeMap<String, FnDef> = BTreeMap::new();
+    let mut i = 0;
+    while i < body.len() {
+        match &body[i] {
+            OpCode::FnDef {
+                name: m_name,
+                params,
+                body: m_body,
+            } => {
+                methods.insert(
+                    m_name.clone(),
+                    FnDef {
+                        params: params.clone(),
+                        body: m_body.clone(),
+                    },
+                );
+                i += 1;
+            }
+            // `let field = expr;` → Expr(init → SystemVarBuffer), Variable(field).
+            // 中文：`let 字段 = 表达式;` → Expr(初始化器 → SystemVarBuffer), Variable(字段)。
+            OpCode::Expr(init, Operand::Register(Register::SystemVarBuffer)) => {
+                match body.get(i + 1) {
+                    Some(OpCode::Variable(field_name, _)) => {
+                        fields.push((field_name.clone(), init.clone()));
+                        i += 2;
+                    }
+                    _ => {
+                        return Err(anyhow!(
+                            "malformed field in class '{name}' (expected a field declaration)"
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(anyhow!(
+                    "class '{name}' body may only contain field declarations and methods"
+                ));
+            }
+        }
+    }
+    Ok(OpCode::ClassDef {
+        name,
+        def: ClassDef { fields, methods },
+    })
 }
 
 /// Parses a single instruction string (already trimmed, no surrounding
@@ -305,11 +477,11 @@ fn parse_instruction(cmd: &str, cmds: &mut Vec<OpCode>) -> Result<()> {
             cmds.push(OpCode::Div(first, second, dest));
         }
         "_println" => {
-            let value = to_operand(cmd_vecs.get(1).ok_or(anyhow!("No value!"))?)?;
+            let value = io_operand(cmd_vecs.get(1).ok_or(anyhow!("No value!"))?, cmds)?;
             cmds.push(OpCode::Println(value));
         }
         "_print" => {
-            let value = to_operand(cmd_vecs.get(1).ok_or(anyhow!("No value!"))?)?;
+            let value = io_operand(cmd_vecs.get(1).ok_or(anyhow!("No value!"))?, cmds)?;
             cmds.push(OpCode::Print(value));
         }
         "io" => {
@@ -322,20 +494,22 @@ fn parse_instruction(cmd: &str, cmds: &mut Vec<OpCode>) -> Result<()> {
                 "write" => {
                     // io write <operand> — output without trailing newline.
                     // 中文：io write <操作数> — 输出，末尾不换行。
-                    let value = to_operand(
+                    let value = io_operand(
                         cmd_vecs
                             .get(2)
                             .ok_or(anyhow!("io write requires an operand"))?,
+                        cmds,
                     )?;
                     cmds.push(OpCode::IO(IoOp::Write(value)));
                 }
                 "writeln" => {
                     // io writeln <operand> — output with trailing newline.
                     // 中文：io writeln <操作数> — 输出并换行。
-                    let value = to_operand(
+                    let value = io_operand(
                         cmd_vecs
                             .get(2)
                             .ok_or(anyhow!("io writeln requires an operand"))?,
+                        cmds,
                     )?;
                     cmds.push(OpCode::IO(IoOp::Writeln(value)));
                 }
@@ -389,20 +563,12 @@ fn parse_instruction(cmd: &str, cmds: &mut Vec<OpCode>) -> Result<()> {
             if expr_str.is_empty() {
                 return Err(anyhow!("expected expression after '=' in let statement"));
             }
-            // If the expression is a function call, push a Call opcode
-            // instead of an Expr, so the return value lands in
-            // SystemVarBuffer for the Variable opcode to pick up.
-            // 中文：如果表达式是函数调用，则推送 Call 操作码而非 Expr，
-            // 使返回值存入 SystemVarBuffer 供 Variable 操作码获取。
-            if expr_str.starts_with("call ") || expr_str == "call" {
-                push_call_opcode(expr_str, Operand::Register(Register::SystemVarBuffer), cmds)?;
-            } else {
-                let expr = parse_expr_str(expr_str)?;
-                cmds.push(OpCode::Expr(
-                    expr,
-                    Operand::Register(Register::SystemVarBuffer),
-                ));
-            }
+            // Evaluate the initializer into SystemVarBuffer so the
+            // Variable opcode can pick it up. A function call, `new`
+            // expression, or method call produces its result there too.
+            // 中文：将初始化器计算到 SystemVarBuffer，供 Variable 操作码获取。
+            // 函数调用、`new` 表达式或方法调用的结果也存放于此。
+            push_rhs_opcode(expr_str, Operand::Register(Register::SystemVarBuffer), cmds)?;
             cmds.push(OpCode::Variable(
                 var_name,
                 Variable {
@@ -423,14 +589,38 @@ fn parse_instruction(cmd: &str, cmds: &mut Vec<OpCode>) -> Result<()> {
             let expr_str = cmd[6..].trim(); // after "return"
             if expr_str.is_empty() {
                 cmds.push(OpCode::Return(Expr::Operand(Operand::Literal(Value::None))));
-            } else if expr_str.starts_with("call ") || expr_str == "call" {
-                // Return the result of a function call.
-                // 中文：返回函数调用的结果。
-                push_call_opcode(expr_str, Operand::Register(Register::SystemVarBuffer), cmds)?;
+            } else if expr_str.starts_with("call ")
+                || expr_str == "call"
+                || expr_str.starts_with("new ")
+                || is_method_call_expr(expr_str)
+            {
+                // Return the result of a call / `new` / method call. The
+                // value lands in SystemVarBuffer, which is exactly what the
+                // caller reads as the return value (no Return opcode needed).
+                // 中文：返回调用 / `new` / 方法调用的结果。值存入 SystemVarBuffer，
+                // 这正是调用者读取的返回值（无需 Return 操作码）。
+                push_rhs_opcode(expr_str, Operand::Register(Register::SystemVarBuffer), cmds)?;
             } else {
                 let expr = parse_expr_str(expr_str)?;
                 cmds.push(OpCode::Return(expr));
             }
+        }
+        // Field assignment: base.field... = expr
+        // 中文：字段赋值：base.field... = 表达式
+        _ if cmd_vecs.len() >= 3 && cmd_vecs[1] == "=" && cmd_vecs[0].contains('.') => {
+            let eq_pos = cmd.find('=').unwrap();
+            let lhs = cmd[..eq_pos].trim();
+            let value = parse_expr_str(cmd[eq_pos + 1..].trim())?;
+            let mut segs: Vec<String> = lhs.split('.').map(|s| s.trim().to_string()).collect();
+            let base = segs.remove(0);
+            if base.is_empty() || segs.iter().any(|s| s.is_empty()) {
+                return Err(anyhow!("malformed field assignment: {lhs}"));
+            }
+            cmds.push(OpCode::SetField {
+                base,
+                path: segs,
+                value,
+            });
         }
         // Assignment with a function call on the RHS: $reg = call name(args)
         // 中文：右侧有函数调用的赋值：$reg = call 名称(参数)
@@ -439,6 +629,31 @@ fn parse_instruction(cmd: &str, cmds: &mut Vec<OpCode>) -> Result<()> {
             let eq_pos = cmd.find('=').unwrap();
             let call_text = cmd[eq_pos + 1..].trim();
             push_call_opcode(call_text, dest, cmds)?;
+        }
+        // Assignment with object construction on the RHS: $reg = new Class(args)
+        // 中文：右侧有对象构造的赋值：$reg = new 类(参数)
+        _ if cmd_vecs.len() >= 3 && cmd_vecs[1] == "=" && cmd_vecs[2] == "new" => {
+            let dest = to_operand(cmd_vecs[0])?;
+            let eq_pos = cmd.find('=').unwrap();
+            push_new_opcode(cmd[eq_pos + 1..].trim(), dest, cmds)?;
+        }
+        // Assignment with a method call on the RHS: $reg = recv.method(args)
+        // 中文：右侧有方法调用的赋值：$reg = 接收者.方法(参数)
+        _ if cmd_vecs.len() >= 3
+            && cmd_vecs[1] == "="
+            && is_method_call_expr(cmd[cmd.find('=').unwrap() + 1..].trim()) =>
+        {
+            let dest = to_operand(cmd_vecs[0])?;
+            let eq_pos = cmd.find('=').unwrap();
+            push_method_call_opcode(cmd[eq_pos + 1..].trim(), dest, cmds)?;
+        }
+        // Bare method call (result discarded): recv.method(args)
+        // 中文：裸方法调用（结果丢弃）：接收者.方法(参数)
+        _ if cmd_vecs[0].contains('.')
+            && cmd.contains('(')
+            && !(cmd_vecs.len() >= 2 && cmd_vecs[1] == "=") =>
+        {
+            push_method_call_opcode(cmd, Operand::Register(Register::SystemVarBuffer), cmds)?;
         }
         _ if cmd_vecs.len() >= 3 && cmd_vecs[1] == "=" => {
             let dest = to_operand(cmd_vecs[0])?;
@@ -680,6 +895,38 @@ fn parse_block(source: &str, pos: &mut usize, cmds: &mut Vec<OpCode>) -> Result<
                         params,
                         body,
                     });
+                    // Consume optional trailing `;` after the `}`.
+                    while *pos < len && bytes[*pos].is_ascii_whitespace() {
+                        *pos += 1;
+                    }
+                    if *pos < len && bytes[*pos] == b';' {
+                        *pos += 1;
+                    }
+                }
+                if text.starts_with("class ") || text == "class" {
+                    // `class Name { let field = expr; fn method(self, ...) { ... } }`
+                    // 中文：`class 名称 { let 字段 = 表达式; fn 方法(self, ...) { ... } }`
+                    let class_name = if text.len() > 5 {
+                        text[5..].trim().to_string()
+                    } else {
+                        return Err(anyhow!("class requires a name"));
+                    };
+                    if class_name.is_empty() {
+                        return Err(anyhow!("class requires a name"));
+                    }
+                    // The text accumulator stopped at `{`. Advance past it.
+                    // 中文：文本累加器停在 `{`。前进越过它。
+                    while *pos < len && bytes[*pos].is_ascii_whitespace() {
+                        *pos += 1;
+                    }
+                    if *pos < len && bytes[*pos] == b'{' {
+                        *pos += 1;
+                    } else {
+                        return Err(anyhow!("expected '{{' after class name"));
+                    }
+                    let mut body = vec![];
+                    parse_block(source, pos, &mut body)?;
+                    cmds.push(build_class_def(class_name, body)?);
                     // Consume optional trailing `;` after the `}`.
                     while *pos < len && bytes[*pos].is_ascii_whitespace() {
                         *pos += 1;

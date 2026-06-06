@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 pub use crate::expr::{BinOp, Expr, UnOp};
-use crate::{register::Register, value::Value, variable::Variable};
+use crate::{class::ClassDef, register::Register, value::Value, variable::Variable};
 
 /// An operand to an instruction — either an immediate literal value or
 /// a register reference.
@@ -107,4 +107,42 @@ pub enum OpCode {
     /// result to `SystemVarBuffer` so the caller can retrieve it.
     /// 中文：从函数返回。计算表达式并将结果写入 `SystemVarBuffer`，以便调用者获取。
     Return(Expr),
+    /// Class definition. Registered in the class table at runtime; the
+    /// field initializers and method bodies are stored, not executed.
+    /// 中文：类定义。在运行时注册到类表中；字段初始化器和方法体被存储，不执行。
+    ClassDef {
+        name: String,
+        def: ClassDef,
+    },
+    /// Object instantiation: `new Class(args)`. Initializes fields from
+    /// their declared expressions, then invokes the `init` method (if any)
+    /// with the receiver bound to `self` and `args` bound to the remaining
+    /// parameters. Stores the resulting object in `dest`.
+    /// 中文：对象实例化：`new Class(args)`。从声明的表达式初始化字段，然后调用 `init` 方法（若有），
+    /// 接收者绑定到 `self`，`args` 绑定到其余参数。将生成的对象存入 `dest`。
+    New {
+        class: String,
+        args: Vec<Expr>,
+        dest: Operand,
+    },
+    /// Method call: `recv.method(args)`. The receiver variable is bound to
+    /// `self`, mutations to `self` persist back into `recv`, and the
+    /// return value is written to `dest`.
+    /// 中文：方法调用：`recv.method(args)`。接收者变量绑定到 `self`，对 `self` 的修改持久化回 `recv`，
+    /// 返回值写入 `dest`。
+    MethodCall {
+        recv: String,
+        method: String,
+        args: Vec<Expr>,
+        dest: Operand,
+    },
+    /// Field assignment: `base.path... = value`. Navigates the field path
+    /// from the `base` variable and writes the evaluated expression into
+    /// the final field.
+    /// 中文：字段赋值：`base.path... = value`。从 `base` 变量沿字段路径导航，将计算后的表达式写入最终字段。
+    SetField {
+        base: String,
+        path: Vec<String>,
+        value: Expr,
+    },
 }

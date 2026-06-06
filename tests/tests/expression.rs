@@ -419,7 +419,8 @@ fn run(source: &str) -> Registers {
     let mut regs = Registers::new();
     let mut variables: ahash::AHashMap<String, vm_isa::variable::Variable> = ahash::AHashMap::new();
     let mut functions: ahash::AHashMap<String, vm_isa::function::FnDef> = ahash::AHashMap::new();
-    ralr::runner::runner(&ops, &mut regs, &mut variables, &mut functions).unwrap();
+    let mut classes: ahash::AHashMap<String, vm_isa::class::ClassDef> = ahash::AHashMap::new();
+    ralr::runner::runner(&ops, &mut regs, &mut variables, &mut functions, &mut classes).unwrap();
     regs
 }
 
@@ -1019,7 +1020,8 @@ fn run_with_vars(source: &str) -> (Registers, ahash::AHashMap<String, vm_isa::va
     let mut regs = Registers::new();
     let mut variables: ahash::AHashMap<String, vm_isa::variable::Variable> = ahash::AHashMap::new();
     let mut functions: ahash::AHashMap<String, vm_isa::function::FnDef> = ahash::AHashMap::new();
-    ralr::runner::runner(&ops, &mut regs, &mut variables, &mut functions).unwrap();
+    let mut classes: ahash::AHashMap<String, vm_isa::class::ClassDef> = ahash::AHashMap::new();
+    ralr::runner::runner(&ops, &mut regs, &mut variables, &mut functions, &mut classes).unwrap();
     (regs, variables)
 }
 
@@ -1365,7 +1367,8 @@ fn run_with_fns(
     let mut regs = Registers::new();
     let mut variables: ahash::AHashMap<String, vm_isa::variable::Variable> = ahash::AHashMap::new();
     let mut functions: ahash::AHashMap<String, vm_isa::function::FnDef> = ahash::AHashMap::new();
-    ralr::runner::runner(&ops, &mut regs, &mut variables, &mut functions).unwrap();
+    let mut classes: ahash::AHashMap<String, vm_isa::class::ClassDef> = ahash::AHashMap::new();
+    ralr::runner::runner(&ops, &mut regs, &mut variables, &mut functions, &mut classes).unwrap();
     (regs, variables)
 }
 

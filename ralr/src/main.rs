@@ -29,6 +29,7 @@ fn main() -> Result<()> {
     let mut registers = Registers::new();
     let mut variables: AHashMap<String, Variable> = AHashMap::new();
     let mut functions: AHashMap<String, vm_isa::function::FnDef> = AHashMap::new();
+    let mut classes: AHashMap<String, vm_isa::class::ClassDef> = AHashMap::new();
 
     // Read the binary file and deserialize into opcodes.
     // 中文：读取二进制文件并反序列化为操作码。
@@ -43,6 +44,12 @@ fn main() -> Result<()> {
     }?;
     // Execute instructions against a fresh register file.
     // 中文：在全新的寄存器文件上执行指令。
-    runner::runner(&op_code, &mut registers, &mut variables, &mut functions)?;
+    runner::runner(
+        &op_code,
+        &mut registers,
+        &mut variables,
+        &mut functions,
+        &mut classes,
+    )?;
     Ok(())
 }

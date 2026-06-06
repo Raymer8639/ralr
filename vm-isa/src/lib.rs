@@ -5,6 +5,7 @@
 //! runtime (`ralr`): instructions, operands, values, and registers.
 //! 中文：定义汇编器（`ralr-asm`）和运行时（`ralr`）共同使用的核心类型：指令、操作数、值和寄存器。
 
+pub mod class;
 pub mod expr;
 pub mod function;
 pub mod op_code;

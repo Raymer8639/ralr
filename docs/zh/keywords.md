@@ -284,6 +284,84 @@ fn max(a, b) {
 }
 ```
 
+## 类（`class`、`new`）
+
+类将字段和方法组织在一起，在变量和函数机制之上实现面向对象编程。
+
+### 定义类
+
+```
+class Name {
+    let field1 = default1;        // 带默认初始值的字段
+    let field2 = default2;
+
+    fn init(self, a, b) {         // 可选的构造函数
+        self.field1 = a;
+        self.field2 = b;
+    }
+
+    fn method(self, arg) {        // 方法
+        return self.field1 + arg;
+    }
+}
+```
+
+- 类体**只能**包含字段声明（`let name = expr;`）和方法定义（`fn name(self, ...) { ... }`）。
+- 每个方法的第一个参数都是 `self`，在方法被调用时绑定到接收者对象。
+- 名为 `init` 的方法是**构造函数**，由 `new` 自动调用。
+
+### 创建对象
+
+```
+$reg = new Name(args);
+let obj = new Name(args);
+```
+
+- `new` 先将每个字段初始化为默认值，然后运行 `init`（若已定义），接收者绑定到 `self`，实参绑定到其余参数。
+- 没有 `init` 的类必须以无参数方式构造：`new Counter()`。
+
+### 字段与方法
+
+```
+obj.field                  // 读取字段（可用于任意表达式）
+obj.field = expr;          // 字段赋值
+obj.method(args);          // 调用方法，丢弃返回值
+$reg = obj.method(args);   // 调用方法并捕获返回值
+```
+
+- 字段读取可用于任何解析表达式的位置 —— 赋值、`let`、条件、参数，以及 `io write`/`writeln` 的操作数。
+- 方法可以修改 `self`，修改会持久化回接收者。因此对象具有类似引用的修改语义（即使通过不可变的 `let` 绑定也能修改字段）。
+- 方法调用的接收者必须是**简单变量名**；更深层的接收者请先绑定到中间变量。
+
+### 示例
+
+```
+class Point {
+    let x = 0;
+    let y = 0;
+
+    fn init(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+
+    fn sum(self) {
+        return self.x + self.y;
+    }
+
+    fn shift(self, dx, dy) {
+        self.x = self.x + dx;
+        self.y = self.y + dy;
+    }
+}
+
+let mut p = new Point(3, 4);
+$a1 = p.sum();        // 7
+p.shift(10, 20);      // p 现在是 (13, 24)
+p.x = 100;
+io writeln p;         // Point { x: 100, y: 24 }
+```
+
 ## I/O 操作（`io` 关键字）
 
 `io` 关键字统一所有 I/O 操作，通过子命令区分：
@@ -343,6 +421,9 @@ ralr 提供 5 个通用寄存器，在汇编代码中以 `$` 前缀引用：
 | `F32` | 包含小数点的数字 | 32 位浮点数 |
 | `F64` | 包含小数点的数字（默认） | 64 位浮点数 |
 | `String` | 用双引号包裹的字符串，如 `"hello"`，支持所有 ASCII 转义字符 | 字符串 |
+| `Object` | 通过 `new 类名(...)` 创建 | 用户自定义对象实例；打印为 `类名 { 字段: 值, ... }` |
+
+> `Object` 值不是数值类型，也不可比较 —— 对对象进行算术或比较运算会在运行时 panic。
 
 ### 转义字符
 
