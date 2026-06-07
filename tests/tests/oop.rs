@@ -16,13 +16,25 @@ use vm_isa::value::Value;
 
 /// Parse + execute, returning both the register file and the variable map.
 /// 中文：解析 + 执行，返回寄存器文件和变量哈希表。
-fn run(source: &str) -> (Registers, ahash::AHashMap<String, vm_isa::variable::Variable>) {
+fn run(
+    source: &str,
+) -> (
+    Registers,
+    ahash::AHashMap<String, vm_isa::variable::Variable>,
+) {
     let ops = reader::parse(source).unwrap();
     let mut regs = Registers::new();
     let mut variables: ahash::AHashMap<String, vm_isa::variable::Variable> = ahash::AHashMap::new();
     let mut functions: ahash::AHashMap<String, vm_isa::function::FnDef> = ahash::AHashMap::new();
     let mut classes: ahash::AHashMap<String, vm_isa::class::ClassDef> = ahash::AHashMap::new();
-    ralr::runner::runner(&ops, &mut regs, &mut variables, &mut functions, &mut classes).unwrap();
+    ralr::runner::runner(
+        &ops,
+        &mut regs,
+        &mut variables,
+        &mut functions,
+        &mut classes,
+    )
+    .unwrap();
     (regs, variables)
 }
 
@@ -137,13 +149,13 @@ fn parse_field_access_in_expression() {
 
 #[test]
 fn float_literal_is_not_field_access() {
-    // `3.14` must parse as a float literal, not a field access on `3`.
-    // 中文：`3.14` 必须解析为浮点字面量，而非对 `3` 的字段访问。
-    let ops = reader::parse("$a1 = 3.14;").unwrap();
+    // `2.5` must parse as a float literal, not a field access on `2`.
+    // 中文：`2.5` 必须解析为浮点字面量，而非对 `2` 的字段访问。
+    let ops = reader::parse("$a1 = 2.5;").unwrap();
     assert_eq!(
         ops[0],
         OpCode::Expr(
-            Expr::Operand(Operand::Literal(Value::F32(3.14))),
+            Expr::Operand(Operand::Literal(Value::F32(2.5))),
             Operand::Register(Register::A1),
         )
     );
@@ -154,10 +166,7 @@ fn float_literal_is_not_field_access() {
 
 #[test]
 fn classdef_bincode_roundtrip() {
-    let ops = reader::parse(
-        "class C { let v = 1; fn get(self) { return self.v; } }",
-    )
-    .unwrap();
+    let ops = reader::parse("class C { let v = 1; fn get(self) { return self.v; } }").unwrap();
     let bytes = bincode::serialize(&ops).unwrap();
     let back: Vec<OpCode> = bincode::deserialize(&bytes).unwrap();
     assert_eq!(ops, back);
@@ -236,9 +245,7 @@ fn method_mutation_persists() {
 
 #[test]
 fn direct_field_assignment() {
-    let (_, vars) = run(
-        "class Point { let x = 0; let y = 0; } let mut p = new Point(); p.x = 99;",
-    );
+    let (_, vars) = run("class Point { let x = 0; let y = 0; } let mut p = new Point(); p.x = 99;");
     assert_eq!(field(&vars, "p", "x"), Value::U8(99));
     assert_eq!(field(&vars, "p", "y"), Value::U8(0));
 }
@@ -263,10 +270,8 @@ fn method_mutates_then_reads_via_field_access() {
 
 #[test]
 fn field_used_in_condition() {
-    let (regs, _) = run(
-        "class Box { let v = 0; fn init(self, v) { self.v = v; } } \
-         let b = new Box(10); if b.v > 5 { $a1 = 1; } else { $a1 = 0; }",
-    );
+    let (regs, _) = run("class Box { let v = 0; fn init(self, v) { self.v = v; } } \
+         let b = new Box(10); if b.v > 5 { $a1 = 1; } else { $a1 = 0; }");
     assert_eq!(regs.read(Register::A1), &Value::U8(1));
 }
 
@@ -282,3 +287,4 @@ fn method_returning_new_object() {
     assert_eq!(regs.read(Register::A1), &Value::U8(7));
     assert_eq!(field(&vars, "w", "inner"), Value::U8(7));
 }
+
