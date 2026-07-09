@@ -10,8 +10,9 @@ use std::io::{self, Write};
 use ahash::AHashMap;
 use anyhow::Result;
 use vm_isa::{
+    class::{ClassDef, Instance},
     function::FnDef,
-    op_code::{IoOp, OpCode, Operand},
+    op_code::{Expr, IoOp, OpCode, Operand},
     register::{Register, Registers},
     value::Value,
     variable::Variable,
@@ -112,14 +113,127 @@ fn parse_stdin_value(s: &str) -> Value {
 /// Arithmetic operators on [`Value`] panic on type mismatches (e.g.
 /// `I32 + String`). This kills the VM — there is no error recovery.
 /// 中文：[`Value`] 上的算术运算符在类型不匹配时会 panic（例如 `I32 + String`）。这会终止虚拟机 — 没有错误恢复。
+/// Writes `val` to a destination operand (register or mutable variable).
+/// 中文：将 `val` 写入目标操作数（寄存器或可变变量）。
+///
+/// Panics if the destination is an immutable variable or a literal.
+/// 中文：若目标是不可变变量或字面量则 panic。
+fn write_dest(
+    dest: &Operand,
+    val: Value,
+    regs: &mut Registers,
+    variables: &mut AHashMap<String, Variable>,
+) {
+    match dest {
+        Operand::Register(reg) => regs.write(*reg, val),
+        Operand::Variable(name, _) => {
+            let var = variables
+                .get_mut(name)
+                .unwrap_or_else(|| panic!("variable not found: {name}"));
+            if !var.is_mut {
+                panic!("cannot assign to immutable variable: {name}");
+            }
+            var.value = val;
+        }
+        Operand::Literal(_) => panic!("cannot assign to a literal"),
+    }
+}
+
+/// Invokes a method body with `receiver` bound to its first parameter
+/// (`self`) and `args` bound to the remaining parameters.
+/// 中文：调用方法体，将 `receiver` 绑定到第一个参数（`self`），`args` 绑定到其余参数。
+///
+/// Returns the (possibly mutated) receiver instance so the caller can
+/// persist field changes. The method's return value is left in
+/// `SystemVarBuffer` for the caller to read.
+/// 中文：返回（可能已修改的）接收者实例，以便调用者持久化字段更改。
+/// 方法的返回值留在 `SystemVarBuffer` 中供调用者读取。
+fn call_method(
+    method: &FnDef,
+    receiver: Instance,
+    args: &[Expr],
+    regs: &mut Registers,
+    variables: &mut AHashMap<String, Variable>,
+    functions: &mut AHashMap<String, FnDef>,
+    classes: &mut AHashMap<String, ClassDef>,
+) -> Result<Instance> {
+    let self_param = method
+        .params
+        .first()
+        .unwrap_or_else(|| panic!("method must take 'self' as its first parameter"));
+    let rest_params = &method.params[1..];
+    if rest_params.len() != args.len() {
+        panic!(
+            "method expects {} argument(s), got {}",
+            rest_params.len(),
+            args.len()
+        );
+    }
+    // Evaluate arguments in the caller scope before binding parameters.
+    // 中文：在绑定参数之前，于调用者作用域中计算参数。
+    let arg_vals: Vec<Value> = args
+        .iter()
+        .map(|a| a.eval_expr(a, regs, variables))
+        .collect();
+    // Save variables shadowed by `self` and the parameters.
+    // 中文：保存被 `self` 和参数遮蔽的变量。
+    let mut saved: Vec<(String, Option<Variable>)> =
+        vec![(self_param.clone(), variables.remove(self_param))];
+    for p in rest_params {
+        saved.push((p.clone(), variables.remove(p)));
+    }
+    // Bind `self` (mutable so the body may update fields) and parameters.
+    // 中文：绑定 `self`（可变，使方法体可更新字段）和参数。
+    variables.insert(
+        self_param.clone(),
+        Variable {
+            is_mut: true,
+            value: Value::Object(Box::new(receiver)),
+        },
+    );
+    for (p, v) in rest_params.iter().zip(arg_vals) {
+        variables.insert(
+            p.clone(),
+            Variable {
+                is_mut: false,
+                value: v,
+            },
+        );
+    }
+    // Execute the method body, then reclaim the (mutated) receiver.
+    // 中文：执行方法体，然后回收（已修改的）接收者。
+    runner(&method.body, regs, variables, functions, classes)?;
+    let self_var = variables
+        .remove(self_param)
+        .expect("'self' binding disappeared during method execution");
+    let new_receiver = match self_var.value {
+        Value::Object(inst) => *inst,
+        other => panic!("'self' was reassigned to a non-object: {other:?}"),
+    };
+    // Restore shadowed variables.
+    // 中文：恢复被遮蔽的变量。
+    for (name, old) in saved {
+        match old {
+            Some(v) => {
+                variables.insert(name, v);
+            }
+            None => {
+                variables.remove(&name);
+            }
+        }
+    }
+    Ok(new_receiver)
+}
+
 /// Executes a sequence of opcodes against a register file, variable
-/// hashmap, and function table.
-/// 中文：根据寄存器文件、变量哈希表和函数表执行一系列操作码。
+/// hashmap, function table, and class table.
+/// 中文：根据寄存器文件、变量哈希表、函数表和类表执行一系列操作码。
 pub fn runner(
     cmds: &[OpCode],
     regs: &mut Registers,
     variables: &mut AHashMap<String, Variable>,
     functions: &mut AHashMap<String, FnDef>,
+    classes: &mut AHashMap<String, ClassDef>,
 ) -> Result<()> {
     for cmd in cmds {
         match cmd {
@@ -147,7 +261,7 @@ pub fn runner(
                 io::stdout().flush().unwrap();
             }
             OpCode::Block(inner) => {
-                runner(inner, regs, variables, functions)?;
+                runner(inner, regs, variables, functions, classes)?;
             }
             OpCode::Expr(expr, dest) => {
                 let result = expr.eval_expr(expr, regs, variables);
@@ -176,10 +290,10 @@ pub fn runner(
             OpCode::If(cond, then_body, else_body) => {
                 let cond_val = cond.eval_expr(cond, regs, variables);
                 match cond_val {
-                    Value::Bool(true) => runner(then_body, regs, variables, functions)?,
+                    Value::Bool(true) => runner(then_body, regs, variables, functions, classes)?,
                     Value::Bool(false) => {
                         if let Some(else_b) = else_body {
-                            runner(else_b, regs, variables, functions)?;
+                            runner(else_b, regs, variables, functions, classes)?;
                         }
                     }
                     other => panic!("if condition must be Bool, got {other:?}"),
@@ -225,7 +339,7 @@ pub fn runner(
                 let value = expr.eval_expr(expr, regs, variables);
                 match value {
                     Value::Bool(true) => {
-                        runner(cmds, regs, variables, functions)?;
+                        runner(cmds, regs, variables, functions, classes)?;
                     }
                     Value::Bool(false) => {
                         break;
@@ -301,7 +415,7 @@ pub fn runner(
                 }
                 // Execute the function body.
                 // 中文：执行函数体。
-                runner(&fn_def.body, regs, variables, functions)?;
+                runner(&fn_def.body, regs, variables, functions, classes)?;
                 // Retrieve the return value from SystemVarBuffer
                 // via take() to avoid cloning the Value.
                 // 中文：通过 take() 获取返回值，避免克隆 Value。
@@ -317,23 +431,7 @@ pub fn runner(
                 }
                 // Write the return value to the destination.
                 // 中文：将返回值写入目标位置。
-                match dest {
-                    Operand::Register(reg) => {
-                        regs.write(*reg, ret_val);
-                    }
-                    Operand::Variable(name, _) => {
-                        let var = variables
-                            .get_mut(name)
-                            .unwrap_or_else(|| panic!("variable not found: {name}"));
-                        if !var.is_mut {
-                            panic!("cannot assign to immutable variable: {name}");
-                        }
-                        var.value = ret_val;
-                    }
-                    Operand::Literal(_) => {
-                        panic!("cannot assign call result to a literal");
-                    }
-                }
+                write_dest(dest, ret_val, regs, variables);
             }
             OpCode::Return(expr) => {
                 // Evaluate the expression and store the result in
@@ -341,6 +439,105 @@ pub fn runner(
                 // 中文：计算表达式并将结果存入 SystemVarBuffer，供调用者获取。
                 let ret_val = expr.eval_expr(expr, regs, variables);
                 regs.write(Register::SystemVarBuffer, ret_val);
+            }
+            OpCode::ClassDef { name, def } => {
+                // Register the class definition in the class table.
+                // 中文：在类表中注册类定义。
+                classes.insert(name.clone(), def.clone());
+            }
+            OpCode::New { class, args, dest } => {
+                // Look up the class and initialize its fields in order.
+                // 中文：查找类并按顺序初始化其字段。
+                let cls = classes
+                    .get(class)
+                    .cloned()
+                    .unwrap_or_else(|| panic!("class not found: {class}"));
+                let mut fields = std::collections::BTreeMap::new();
+                for (field_name, init) in &cls.fields {
+                    let v = init.eval_expr(init, regs, variables);
+                    fields.insert(field_name.clone(), v);
+                }
+                let mut instance = Instance {
+                    class: class.clone(),
+                    fields,
+                };
+                // If an `init` method exists, run it as a constructor.
+                // 中文：如果存在 `init` 方法，则将其作为构造函数运行。
+                if let Some(init_fn) = cls.methods.get("init") {
+                    instance =
+                        call_method(init_fn, instance, args, regs, variables, functions, classes)?;
+                    // Discard any return value left by the constructor.
+                    // 中文：丢弃构造函数留下的任何返回值。
+                    regs.take(Register::SystemVarBuffer);
+                } else if !args.is_empty() {
+                    panic!(
+                        "class '{class}' has no 'init' method but was constructed with {} argument(s)",
+                        args.len()
+                    );
+                }
+                write_dest(dest, Value::Object(Box::new(instance)), regs, variables);
+            }
+            OpCode::MethodCall {
+                recv,
+                method,
+                args,
+                dest,
+            } => {
+                // Take the receiver object out of its variable.
+                // 中文：从其变量中取出接收者对象。
+                let recv_var = variables
+                    .get(recv)
+                    .unwrap_or_else(|| panic!("variable not found: {recv}"));
+                let instance = match &recv_var.value {
+                    Value::Object(inst) => (**inst).clone(),
+                    other => panic!("'{recv}' is not an object: {other:?}"),
+                };
+                let cls = classes
+                    .get(&instance.class)
+                    .cloned()
+                    .unwrap_or_else(|| panic!("class not found: {}", instance.class));
+                let m = cls.methods.get(method).cloned().unwrap_or_else(|| {
+                    panic!("method '{method}' not found on class '{}'", instance.class)
+                });
+                let new_instance =
+                    call_method(&m, instance, args, regs, variables, functions, classes)?;
+                // Persist field mutations back into the receiver variable
+                // (objects have reference-like mutation semantics).
+                // 中文：将字段修改持久化回接收者变量（对象具有类似引用的修改语义）。
+                if let Some(v) = variables.get_mut(recv) {
+                    v.value = Value::Object(Box::new(new_instance));
+                }
+                // Capture the method's return value and write it to dest.
+                // 中文：捕获方法的返回值并写入目标位置。
+                let ret_val = regs.take(Register::SystemVarBuffer);
+                write_dest(dest, ret_val, regs, variables);
+            }
+            OpCode::SetField { base, path, value } => {
+                // Evaluate the new value before borrowing the object mutably.
+                // 中文：在可变借用对象之前计算新值。
+                let new_val = value.eval_expr(value, regs, variables);
+                let var = variables
+                    .get_mut(base)
+                    .unwrap_or_else(|| panic!("variable not found: {base}"));
+                // Navigate intermediate fields, then set the final one.
+                // 中文：导航中间字段，然后设置最终字段。
+                let mut target = &mut var.value;
+                for seg in &path[..path.len() - 1] {
+                    target = match target {
+                        Value::Object(inst) => inst
+                            .fields
+                            .get_mut(seg)
+                            .unwrap_or_else(|| panic!("field not found: {seg}")),
+                        other => panic!("cannot access field '{seg}' on non-object: {other:?}"),
+                    };
+                }
+                let last = path.last().expect("field path must be non-empty");
+                match target {
+                    Value::Object(inst) => {
+                        inst.fields.insert(last.clone(), new_val);
+                    }
+                    other => panic!("cannot set field '{last}' on non-object: {other:?}"),
+                }
             }
         }
     }

@@ -12,6 +12,8 @@ use std::{
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Rem, Shl, Shr, Sub},
 };
 
+use crate::class::Instance;
+
 /// Generates the match arms for same-type arithmetic operations.
 /// 中文：为同类型算术运算生成 match 分支。
 ///
@@ -56,6 +58,9 @@ pub enum Value {
     F64(f64),
     Bool(bool),
     String(String),
+    /// A user-defined object instance (boxed to keep `Value` small).
+    /// 中文：用户自定义对象实例（装箱以保持 `Value` 体积较小）。
+    Object(Box<Instance>),
 }
 
 impl fmt::Display for Value {
@@ -71,6 +76,24 @@ impl fmt::Display for Value {
             Value::F64(v) => write!(f, "{v}"),
             Value::Bool(v) => write!(f, "{v}"),
             Value::String(v) => write!(f, "{v}"),
+            Value::Object(inst) => {
+                // Render as `ClassName { field: value, ... }`. BTreeMap
+                // iteration is sorted, so the output is deterministic.
+                // 中文：渲染为 `类名 { 字段: 值, ... }`。BTreeMap 迭代有序，输出确定。
+                write!(f, "{} {{", inst.class)?;
+                for (i, (k, v)) in inst.fields.iter().enumerate() {
+                    if i == 0 {
+                        write!(f, " {k}: {v}")?;
+                    } else {
+                        write!(f, ", {k}: {v}")?;
+                    }
+                }
+                if inst.fields.is_empty() {
+                    write!(f, "}}")
+                } else {
+                    write!(f, " }}")
+                }
+            }
         }
     }
 }

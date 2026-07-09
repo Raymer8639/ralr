@@ -16,7 +16,7 @@ ralr is a lightweight virtual machine with a custom register-based instruction s
 | `ralr`     | VM runtime — loads and executes `.abin` files           |
 | `vm-isa`   | Shared library — instruction set architecture types     |
 
-The VM supports variables, control flow (`if`/`else`/`while`), functions with parameters and return values, I/O operations, and a full expression system with operator precedence.
+The VM supports variables, control flow (`if`/`else`/`while`), functions with parameters and return values, classes with fields and methods, I/O operations, and a full expression system with operator precedence.
 
 ---
 
@@ -116,6 +116,29 @@ $a1 = call add(3, 5);
 io writeln $a1;             // 8
 ```
 
+### Classes
+
+```ralr
+class Point {
+    let x = 0;
+    let y = 0;
+
+    fn init(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+
+    fn sum(self) {
+        return self.x + self.y;
+    }
+}
+
+let mut p = new Point(3, 4);
+$a1 = p.sum();             // 7
+p.x = 100;
+io writeln p;              // Point { x: 100, y: 4 }
+```
+
 ---
 
 ## Architecture
@@ -127,6 +150,7 @@ io writeln $a1;             // 8
 - **5 general-purpose registers** (`$a1`–`$a5`) + 1 internal buffer
 - **Variable store** — hashmap-backed, mutable/immutable
 - **Function table** — definitions registered at runtime, replayed on each call
+- **Class table** — classes registered at runtime; objects carry their fields and dispatch methods by name
 - **Binary format** — `bincode` serialization of the `OpCode` AST
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture reference.
@@ -146,6 +170,7 @@ See [CLAUDE.md](CLAUDE.md) for the full architecture reference.
 | [`io.ralr`](examples/io.ralr)           | I/O operations                                  |
 | [`var.ralr`](examples/var.ralr)         | Variables and mutation                          |
 | [`fn.ralr`](examples/fn.ralr)           | Functions, parameters, closures                 |
+| [`oop.ralr`](examples/oop.ralr)         | Classes, fields, methods, `new`                 |
 
 ---
 
